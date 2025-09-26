@@ -1,0 +1,19 @@
+[package]
+name = "line_endings"
+version = "0.1.0"
+edition = "2024"
+
+[profile.release]
+panic = 'abort'
+codegen-units = 1
+lto = 'fat'
+strip = true
+
+[dependencies]
+anyhow = ">= 1.0.98"
+pico-args = ">= 0.5"
+rayon = ">= 1.10.0"
+glob = ">= 0.3.3"
+
+[dev-dependencies]
+tempfile = "3.0"

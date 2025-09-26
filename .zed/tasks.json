@@ -1,0 +1,30 @@
+[
+  {
+    "label": "Run with test_lines.txt",
+    "command": "cargo",
+    "args": ["run", "--", "test_lines.txt"]
+  },
+  {
+    "label": "Run with test*.txt",
+    "command": "cargo",
+    "args": ["run", "--", "test*.txt"]
+  },
+  {
+    "label": "Build project",
+    "command": "cargo",
+    "args": ["build"]
+  },
+  {
+    "label": "Clippy",
+    "command": "cargo",
+    "args": [
+      "clippy",
+      "--color=always",
+      "--",
+      "-D",
+      "clippy::all",
+      "-D",
+      "clippy::pedantic"
+    ]
+  }
+]

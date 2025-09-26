@@ -1,0 +1,61 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug test*.txt",
+      "cargo": {
+        "args": [
+          "build"
+        ],
+        "filter": {
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "test*.txt"
+      ],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug with 2 files",
+      "cargo": {
+        "args": [
+          "build"
+        ],
+        "filter": {
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "test_lines.txt",
+        "test_windows.txt"
+      ],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated"
+    },
+    {
+      "type": "lldb",
+      "request": "launch",
+      "name": "Debug -w X_*.txt",
+      "cargo": {
+        "args": [
+          "build"
+        ],
+        "filter": {
+          "kind": "bin"
+        }
+      },
+      "args": [
+        "-w",
+        "X_*.txt"
+      ],
+      "cwd": "${workspaceFolder}",
+      "terminal": "integrated"
+    }
+  ]
+}
