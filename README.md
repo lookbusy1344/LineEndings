@@ -1,5 +1,7 @@
 # Line Endings Analyzer
 
+[![Build and test](https://github.com/lookbusy1344/LineEndings/actions/workflows/ci.yml/badge.svg)](https://github.com/lookbusy1344/LineEndings/actions/workflows/ci.yml)
+
 A fast Rust command-line tool for analyzing and fixing line ending issues in text files. Detect line ending types (LF/CRLF), check for Byte Order Marks (BOM), and optionally fix these issues with consistent line endings.
 
 ## Features
