@@ -13,7 +13,7 @@ fn setup_test_environment() -> TempDir {
     let test_folder = Path::new("test_folder");
 
     // Copy all test files from test_folder to temporary directory
-    copy_dir_recursive(&test_folder, temp_dir.path()).expect("Failed to copy test files");
+    copy_dir_recursive(test_folder, temp_dir.path()).expect("Failed to copy test files");
 
     temp_dir
 }
