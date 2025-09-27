@@ -41,8 +41,7 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
     // check for switches collected by the free_from_str loop
     if !unrecognized_switches.is_empty() {
         return Err(anyhow::anyhow!(format!(
-            "Unrecognized switches: {:?}",
-            unrecognized_switches
+            "Unrecognized switches: {unrecognized_switches:?}"
         )));
     }
 
@@ -50,8 +49,7 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
     let extras = args.finish();
     if !extras.is_empty() {
         return Err(anyhow::anyhow!(format!(
-            "Unrecognized switches: {:?}",
-            extras
+            "Unrecognized switches: {extras:?}"
         )));
     }
 
