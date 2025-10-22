@@ -11,6 +11,8 @@ env:
 jobs:
   build-release:
     name: Build Release
+    permissions:
+      contents: read
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
