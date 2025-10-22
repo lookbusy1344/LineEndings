@@ -70,14 +70,13 @@ jobs:
           mkdir -p artifacts
           cp target/${{ matrix.target }}/release/${{ matrix.artifact_name }} artifacts/${{ matrix.asset_name }}
           cd artifacts
-          sha256sum ${{ matrix.asset_name }} > ${{ matrix.asset_name }}.sha256
-          cat ${{ matrix.asset_name }}.sha256
+          sha256sum ${{ matrix.asset_name }}
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.asset_name }}
-          path: artifacts/*
+          path: artifacts/${{ matrix.asset_name }}
           if-no-files-found: error
 
   create-release:
