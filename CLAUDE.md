@@ -81,3 +81,6 @@ The project uses Rust 2024 edition with aggressive release optimizations:
 - Single codegen unit
 - Debug symbols stripped
 - Panic abort strategy
+
+**Security:**
+- Run `cargo audit` once a day when working on this project to check for security vulnerabilities in dependencies
