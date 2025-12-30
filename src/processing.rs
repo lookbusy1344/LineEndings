@@ -150,6 +150,10 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     new_file_name.push_str(&file_name.to_string_lossy());
     let output_path = parent.join(new_file_name);
 
+    // Read original file to check if it ends with a newline
+    let original_content = std::fs::read(input_path)?;
+    let has_trailing_newline = original_content.last().is_some_and(|&b| b == b'\n');
+
     // Create a temporary file for new content
     let infile = File::open(input_path)?;
     let reader = BufReader::new(infile);
@@ -160,10 +164,15 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
         LineEnding::Crlf => &b"\r\n"[..],
     };
 
-    for line in reader.lines() {
-        let line = line?;
+    let lines: Vec<_> = reader.lines().collect::<Result<_, _>>()?;
+    let line_count = lines.len();
+
+    for (i, line) in lines.into_iter().enumerate() {
         outfile.write_all(line.as_bytes())?;
-        outfile.write_all(line_ending)?;
+        // Add line ending after each line, except the last one if original had no trailing newline
+        if i < line_count - 1 || has_trailing_newline {
+            outfile.write_all(line_ending)?;
+        }
     }
 
     // Ensure all data is written before replacing files
