@@ -93,8 +93,12 @@ fn main() -> Result<()> {
 
     // Only show line ending alteration if one is set
     match config.line_ending_target {
-        LineEndingTarget::Linux => config_parts.push("Line ending alteration: Linux (LF)".to_string()),
-        LineEndingTarget::Windows => config_parts.push("Line ending alteration: Windows (CRLF)".to_string()),
+        LineEndingTarget::Linux => {
+            config_parts.push("Line ending alteration: Linux (LF)".to_string())
+        }
+        LineEndingTarget::Windows => {
+            config_parts.push("Line ending alteration: Windows (CRLF)".to_string())
+        }
         LineEndingTarget::None => {} // Don't show anything for no alteration
     }
 
