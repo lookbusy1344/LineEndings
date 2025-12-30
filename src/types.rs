@@ -40,6 +40,7 @@ pub struct ConfigSettings {
     pub check_bom: bool,
     pub remove_bom: bool,
     pub recursive: bool,
+    pub delete_backups: bool,
     pub supplied_paths: Vec<String>,
     pub folder: Option<String>,
 }

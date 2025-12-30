@@ -362,3 +362,45 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
 
     Ok(())
 }
+
+/// Deletes backup files for the given file analyses
+///
+/// # Errors
+///
+/// Returns an error if backup deletion fails.
+pub fn delete_backup_files(results: &[FileAnalysis]) -> Result<()> {
+    println!();
+
+    let mut deleted_count = 0usize;
+    let mut not_found_count = 0usize;
+
+    for result in results {
+        // Skip files with errors
+        if result.error.is_some() {
+            continue;
+        }
+
+        let backup_path = get_backup_path(&result.path);
+        if backup_path.exists() {
+            match std::fs::remove_file(&backup_path) {
+                Ok(()) => {
+                    println!("\"{}\"\tbackup deleted", backup_path.display());
+                    deleted_count += 1;
+                }
+                Err(e) => {
+                    return Err(anyhow::anyhow!(
+                        "Failed to delete backup {}: {}",
+                        backup_path.display(),
+                        e
+                    ));
+                }
+            }
+        } else {
+            not_found_count += 1;
+        }
+    }
+
+    println!("Deleted {deleted_count} backup file(s), {not_found_count} not found");
+
+    Ok(())
+}

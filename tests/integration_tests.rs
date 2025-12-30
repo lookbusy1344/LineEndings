@@ -48,6 +48,7 @@ fn create_test_config() -> ConfigSettings {
         check_bom: true,
         remove_bom: false,
         recursive: true,
+        delete_backups: false,
         supplied_paths: vec![],
         folder: None,
     }

@@ -16,6 +16,7 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
     let check_bom = args.contains(["-b", "--bom"]);
     let remove_bom = args.contains(["-m", "--remove-bom"]);
     let recursive = args.contains(["-r", "--recursive"]);
+    let delete_backups = args.contains(["-d", "--delete-backups"]);
 
     let folder: Option<String> = args.opt_value_from_str(["-f", "--folder"])?;
 
@@ -60,6 +61,7 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
         check_bom: check_bom || remove_bom, // need to check BOM if removing it
         remove_bom,
         recursive,
+        delete_backups,
         supplied_paths: file_paths,
         folder,
     })

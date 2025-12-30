@@ -8,6 +8,7 @@ OPTIONS:
     -c, --case-sensitive         Case-sensitive glob matching
     -b, --bom                    Check for Byte Order Mark (BOM) in files
     -r, --recursive              Recursively search subdirectories
+    -d, --delete-backups         Delete .bak backup files after successful operations
 
 FIXES:
     -w, --windows-line-endings   Rewrite with Windows line endings (CRLF)
