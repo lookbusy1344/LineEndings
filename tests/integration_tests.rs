@@ -497,3 +497,431 @@ fn test_bom_status_format_strings() {
     let bom_type = detect_bom(&no_bom_path).expect("Should detect no BOM");
     assert_eq!(bom_type, BomType::None, "Should detect no BOM");
 }
+
+// ============================================================================
+// Error Handling Tests
+// ============================================================================
+
+#[test]
+fn test_non_existent_file() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let non_existent = temp_dir.path().join("does_not_exist.txt");
+    let config = create_test_config();
+
+    let analysis = analyze_file(&non_existent, &config);
+    assert!(
+        analysis.error.is_some(),
+        "Should have error for non-existent file"
+    );
+}
+
+#[test]
+fn test_empty_file() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let empty_file = temp_dir.path().join("empty.txt");
+    fs::File::create(&empty_file).expect("Failed to create empty file");
+
+    let config = create_test_config();
+    let analysis = analyze_file(&empty_file, &config);
+
+    assert!(analysis.error.is_none(), "Empty file should not error");
+    assert_eq!(analysis.lf_count, 0, "Empty file should have no LF");
+    assert_eq!(analysis.crlf_count, 0, "Empty file should have no CRLF");
+}
+
+#[test]
+fn test_file_with_only_cr() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let cr_file = temp_dir.path().join("cr_only.txt");
+
+    // Write file with only CR (old Mac style)
+    let content = b"Line 1\rLine 2\rLine 3\r";
+    fs::write(&cr_file, content).expect("Failed to write CR file");
+
+    let config = create_test_config();
+    let analysis = analyze_file(&cr_file, &config);
+
+    assert!(analysis.error.is_none(), "CR file should not error");
+    assert_eq!(analysis.lf_count, 0, "Should have no LF");
+    assert_eq!(analysis.crlf_count, 0, "Should have no CRLF");
+}
+
+#[test]
+fn test_file_ending_with_cr_no_lf() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let cr_ending = temp_dir.path().join("cr_ending.txt");
+
+    // Write file ending with CR but no LF
+    let content = b"Line 1\nLine 2\r";
+    fs::write(&cr_ending, content).expect("Failed to write file");
+
+    let config = create_test_config();
+    let analysis = analyze_file(&cr_ending, &config);
+
+    assert!(analysis.error.is_none(), "Should not error");
+    assert_eq!(analysis.lf_count, 1, "Should have 1 LF");
+    assert_eq!(analysis.crlf_count, 0, "Should have no CRLF");
+}
+
+#[test]
+fn test_large_file() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let large_file = temp_dir.path().join("large.txt");
+
+    // Create a file larger than buffer size (4KB) - create ~10KB file
+    let mut file = fs::File::create(&large_file).expect("Failed to create file");
+    for i in 0..1000 {
+        writeln!(
+            file,
+            "Line number {i} with some extra text to increase size"
+        )
+        .expect("Failed to write to file");
+    }
+
+    let config = create_test_config();
+    let analysis = analyze_file(&large_file, &config);
+
+    assert!(analysis.error.is_none(), "Large file should not error");
+    assert_eq!(analysis.lf_count, 1000, "Should have 1000 LF endings");
+}
+
+// ============================================================================
+// Backup File Tests
+// ============================================================================
+
+#[test]
+fn test_backup_file_created_on_line_ending_conversion() {
+    let temp_dir = setup_test_environment();
+    let mut config = create_test_config();
+    config.set_windows = true;
+
+    let linux_file = temp_dir.path().join("test_linux.txt");
+    let backup_file = linux_file.with_extension("txt.bak");
+
+    // Ensure backup doesn't exist initially
+    assert!(!backup_file.exists(), "Backup should not exist initially");
+
+    let analysis = analyze_file(&linux_file, &config);
+    let analyses = vec![analysis];
+    let result = rewrite_files(&config, &analyses);
+    assert!(result.is_ok(), "Rewrite should succeed");
+
+    // Verify backup was created
+    assert!(
+        backup_file.exists(),
+        "Backup file should be created after rewrite"
+    );
+}
+
+#[test]
+fn test_backup_file_created_on_bom_removal() {
+    let temp_dir = setup_test_environment();
+    let mut config = create_test_config();
+    config.remove_bom = true;
+
+    let has_bom_path = temp_dir.path().join("has_bom.txt");
+    let backup_file = has_bom_path.with_extension("txt.bak");
+
+    // Ensure backup doesn't exist initially
+    assert!(!backup_file.exists(), "Backup should not exist initially");
+
+    let analysis = analyze_file(&has_bom_path, &config);
+    let analyses = vec![analysis];
+    let result = remove_bom_from_files(&config, &analyses);
+    assert!(result.is_ok(), "BOM removal should succeed");
+
+    // Verify backup was created
+    assert!(
+        backup_file.exists(),
+        "Backup file should be created after BOM removal"
+    );
+}
+
+#[test]
+fn test_backup_not_overwritten_on_multiple_operations() {
+    let temp_dir = setup_test_environment();
+    let mut config = create_test_config();
+    config.set_windows = true;
+
+    let linux_file = temp_dir.path().join("test_linux.txt");
+    let backup_file = linux_file.with_extension("txt.bak");
+
+    // First conversion
+    let analysis = analyze_file(&linux_file, &config);
+    let analyses = vec![analysis];
+    let result = rewrite_files(&config, &analyses);
+    assert!(result.is_ok(), "First rewrite should succeed");
+
+    // Get backup creation time
+    let backup_metadata = fs::metadata(&backup_file).expect("Backup should exist");
+    let first_modified = backup_metadata
+        .modified()
+        .expect("Should get modified time");
+
+    // Wait a moment to ensure timestamps would differ
+    std::thread::sleep(std::time::Duration::from_millis(10));
+
+    // Second conversion (convert back to Linux)
+    config.set_windows = false;
+    config.set_linux = true;
+    let analysis = analyze_file(&linux_file, &config);
+    let analyses = vec![analysis];
+    let result = rewrite_files(&config, &analyses);
+    assert!(result.is_ok(), "Second rewrite should succeed");
+
+    // Verify backup was NOT overwritten
+    let backup_metadata = fs::metadata(&backup_file).expect("Backup should still exist");
+    let second_modified = backup_metadata
+        .modified()
+        .expect("Should get modified time");
+
+    assert_eq!(
+        first_modified, second_modified,
+        "Backup should not be overwritten on second operation"
+    );
+}
+
+// ============================================================================
+// Trailing Newline Preservation Tests
+// ============================================================================
+
+#[test]
+fn test_trailing_newline_preserved_on_conversion() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file_with_trailing = temp_dir.path().join("trailing.txt");
+
+    // Create file with trailing newline
+    fs::write(&file_with_trailing, b"Line 1\nLine 2\nLine 3\n").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.set_windows = true;
+
+    let analysis = analyze_file(&file_with_trailing, &config);
+    let analyses = vec![analysis];
+    let result = rewrite_files(&config, &analyses);
+    assert!(result.is_ok(), "Conversion should succeed");
+
+    // Verify trailing newline is preserved
+    let content = fs::read(&file_with_trailing).expect("Should read file");
+    assert!(
+        content.ends_with(b"\r\n"),
+        "Trailing newline should be preserved as CRLF"
+    );
+}
+
+#[test]
+fn test_no_trailing_newline_preserved_on_conversion() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file_no_trailing = temp_dir.path().join("no_trailing.txt");
+
+    // Create file WITHOUT trailing newline
+    fs::write(&file_no_trailing, b"Line 1\nLine 2\nLine 3").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.set_windows = true;
+
+    let analysis = analyze_file(&file_no_trailing, &config);
+    let analyses = vec![analysis];
+    let result = rewrite_files(&config, &analyses);
+    assert!(result.is_ok(), "Conversion should succeed");
+
+    // Verify no trailing newline is added
+    let content = fs::read(&file_no_trailing).expect("Should read file");
+    assert!(
+        !content.ends_with(b"\r\n") && !content.ends_with(b"\n"),
+        "Should not add trailing newline"
+    );
+    assert!(
+        content.ends_with(b"3"),
+        "Should end with last character of content"
+    );
+}
+
+// ============================================================================
+// CLI/Config Tests
+// ============================================================================
+
+#[test]
+fn test_conflicting_line_ending_flags() {
+    use line_endings::config::parse_args;
+    use pico_args::Arguments;
+    use std::ffi::OsString;
+
+    let args: Vec<OsString> = vec![
+        "program".into(),
+        "-l".into(),
+        "-w".into(),
+        "test.txt".into(),
+    ];
+    let pico_args = Arguments::from_vec(args);
+    let result = parse_args(pico_args);
+
+    assert!(
+        result.is_err(),
+        "Should error when both -l and -w are specified"
+    );
+    let error_msg = result.err().unwrap().to_string();
+    assert!(
+        error_msg.contains("Cannot set both Linux and Windows"),
+        "Error message should mention conflicting flags"
+    );
+}
+
+#[test]
+fn test_unrecognized_switch() {
+    use line_endings::config::parse_args;
+    use pico_args::Arguments;
+    use std::ffi::OsString;
+
+    let args: Vec<OsString> = vec!["program".into(), "--invalid-flag".into(), "test.txt".into()];
+    let pico_args = Arguments::from_vec(args);
+    let result = parse_args(pico_args);
+
+    assert!(result.is_err(), "Should error on unrecognized switch");
+}
+
+#[test]
+fn test_remove_bom_enables_check_bom() {
+    use line_endings::config::parse_args;
+    use pico_args::Arguments;
+    use std::ffi::OsString;
+
+    let args: Vec<OsString> = vec!["program".into(), "-m".into(), "test.txt".into()];
+    let pico_args = Arguments::from_vec(args);
+    let result = parse_args(pico_args);
+
+    assert!(result.is_ok(), "Should parse successfully");
+    let config = result.unwrap();
+    assert!(
+        config.check_bom,
+        "check_bom should be enabled when remove_bom is set"
+    );
+    assert!(config.remove_bom, "remove_bom should be set");
+}
+
+// ============================================================================
+// Glob/Utils Tests
+// ============================================================================
+
+#[test]
+fn test_glob_pattern_matching() {
+    use line_endings::utils::get_paths_matching_glob;
+
+    let temp_dir = setup_test_environment();
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    config.supplied_paths = vec!["*.txt".to_string()];
+    config.recursive = false;
+
+    let paths = get_paths_matching_glob(&config).expect("Should match glob pattern");
+
+    assert!(!paths.is_empty(), "Should match at least one file");
+    assert!(
+        paths.iter().all(|p| p.ends_with(".txt")),
+        "All matched files should end with .txt"
+    );
+}
+
+#[test]
+fn test_recursive_glob_pattern() {
+    use line_endings::utils::get_paths_matching_glob;
+
+    let temp_dir = setup_test_environment();
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    config.supplied_paths = vec!["has_bom.txt".to_string()];
+    config.recursive = true;
+
+    let paths = get_paths_matching_glob(&config).expect("Should match glob pattern");
+
+    // Should find has_bom.txt in both root and sub_folder
+    assert!(
+        paths.len() >= 2,
+        "Should find files in subdirectories with recursive flag"
+    );
+}
+
+#[test]
+fn test_case_sensitive_glob() {
+    use line_endings::utils::get_paths_matching_glob;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let lowercase_file = temp_dir.path().join("test.txt");
+    let uppercase_file = temp_dir.path().join("TEST.txt");
+
+    fs::write(&lowercase_file, b"content").expect("Failed to create file");
+    fs::write(&uppercase_file, b"content").expect("Failed to create file");
+
+    // Case-sensitive search
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    config.supplied_paths = vec!["test.txt".to_string()];
+    config.case_sensitive = true;
+    config.recursive = false;
+
+    let paths = get_paths_matching_glob(&config).expect("Should match glob pattern");
+
+    assert_eq!(paths.len(), 1, "Should match only exact case");
+    assert!(
+        paths[0].ends_with("test.txt"),
+        "Should match lowercase file"
+    );
+}
+
+#[test]
+fn test_non_matching_glob_pattern() {
+    use line_endings::utils::get_paths_matching_glob;
+
+    let temp_dir = setup_test_environment();
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    config.supplied_paths = vec!["*.doesnotexist".to_string()];
+    config.recursive = false;
+
+    let paths = get_paths_matching_glob(&config).expect("Should not error on no matches");
+
+    assert!(
+        paths.is_empty(),
+        "Should return empty vector for no matches"
+    );
+}
+
+// ============================================================================
+// Multiple File Processing Tests
+// ============================================================================
+
+#[test]
+fn test_multiple_files_processed_correctly() {
+    let temp_dir = setup_test_environment();
+    let mut config = create_test_config();
+    config.set_linux = true;
+
+    // Analyze multiple files
+    let windows_file = temp_dir.path().join("test_windows.txt");
+    let linux_file = temp_dir.path().join("test_linux.txt");
+    let mixed_file = temp_dir.path().join("test_lines.txt");
+
+    let analyses = vec![
+        analyze_file(&windows_file, &config),
+        analyze_file(&linux_file, &config),
+        analyze_file(&mixed_file, &config),
+    ];
+
+    let result = rewrite_files(&config, &analyses);
+    assert!(result.is_ok(), "Should process multiple files successfully");
+
+    // Verify all files now have LF only
+    let windows_analysis = analyze_file(&windows_file, &config);
+    let linux_analysis = analyze_file(&linux_file, &config);
+    let mixed_analysis = analyze_file(&mixed_file, &config);
+
+    assert!(
+        windows_analysis.is_lf_only(),
+        "Windows file should be converted to LF"
+    );
+    assert!(linux_analysis.is_lf_only(), "Linux file should remain LF");
+    assert!(
+        mixed_analysis.is_lf_only(),
+        "Mixed file should be converted to LF"
+    );
+}
