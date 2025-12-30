@@ -235,9 +235,8 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
         match remove_bom_from_file(&result.path, bom_size) {
             Ok(()) => {
                 println!(
-                    "\"{}\"\tBOM removed: {}",
-                    result.path.display(),
-                    bom_type.to_string()
+                    "\"{}\"\tBOM removed: {bom_type}",
+                    result.path.display()
                 );
                 bom_removed += 1;
             }

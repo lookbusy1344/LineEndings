@@ -11,16 +11,15 @@ pub enum BomType {
     Utf32Be,
 }
 
-impl BomType {
-    #[must_use]
-    pub fn to_string(self) -> &'static str {
+impl std::fmt::Display for BomType {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BomType::None => "none",
-            BomType::Utf8 => "UTF-8",
-            BomType::Utf16Le => "UTF-16 LE",
-            BomType::Utf16Be => "UTF-16 BE",
-            BomType::Utf32Le => "UTF-32 LE",
-            BomType::Utf32Be => "UTF-32 BE",
+            BomType::None => write!(f, "none"),
+            BomType::Utf8 => write!(f, "UTF-8"),
+            BomType::Utf16Le => write!(f, "UTF-16 LE"),
+            BomType::Utf16Be => write!(f, "UTF-16 BE"),
+            BomType::Utf32Le => write!(f, "UTF-32 LE"),
+            BomType::Utf32Be => write!(f, "UTF-32 BE"),
         }
     }
 }
