@@ -3,5 +3,6 @@ pub mod analysis;
 pub mod config;
 pub mod processing;
 pub mod types;
+#[cfg(test)]
 pub mod unit_tests;
 pub mod utils;
