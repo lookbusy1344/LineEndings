@@ -82,7 +82,7 @@ println!("\"{file_name}\"\t{line_endings}{bom_info}");
 
 ---
 
-### 5. Duplicate BOM String Formatting
+### 5. Duplicate BOM String Formatting ✅ FIXED
 
 **Location:** `analysis.rs:110-119`
 
@@ -101,6 +101,8 @@ let bom_info = match bom_type {
 
 **Severity:** Low
 **Recommendation:** Use the `Display` impl: `format!(", BOM: {}", bom)`
+
+**Resolution:** Replaced manual BOM type matching with `format!(", BOM: {bom}")` using the Display impl. Note: BomType::None now displays as "none" (lowercase) instead of "None".
 
 ---
 

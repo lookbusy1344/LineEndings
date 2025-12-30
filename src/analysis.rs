@@ -108,15 +108,8 @@ pub fn count_line_endings_in_file(
     }
 
     let bom_info = match bom_type {
-        None => "", // no BOM check requested
-        Some(bom) => match bom {
-            BomType::None => ", BOM: None",
-            BomType::Utf8 => ", BOM: UTF-8",
-            BomType::Utf16Le => ", BOM: UTF-16 LE",
-            BomType::Utf16Be => ", BOM: UTF-16 BE",
-            BomType::Utf32Le => ", BOM: UTF-32 LE",
-            BomType::Utf32Be => ", BOM: UTF-32 BE",
-        },
+        None => String::new(), // no BOM check requested
+        Some(bom) => format!(", BOM: {bom}"),
     };
 
     // display results immediately, as Rayon is still running tasks in parallel
