@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rayon::prelude::*;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read, Write};
+use std::io::{self, BufRead, BufReader, Read, Seek, Write};
 use std::path::Path;
 
 use crate::types::{
@@ -152,13 +152,12 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     new_file_name.push_str(&file_name.to_string_lossy());
     let output_path = parent.join(new_file_name);
 
-    // Read original file to check if it ends with a newline
-    let original_content = std::fs::read(input_path)?;
-    let has_trailing_newline = original_content.last().is_some_and(|&b| b == b'\n');
+    // Check if file ends with a newline by reading only the last byte
+    let has_trailing_newline = check_trailing_newline(input_path)?;
 
-    // Create a temporary file for new content
+    // Process file line by line without loading into memory
     let infile = File::open(input_path)?;
-    let reader = BufReader::new(infile);
+    let reader = BufReader::with_capacity(BUFFER_SIZE, infile);
     let mut outfile = File::create(&output_path)?;
 
     let line_ending: &[u8] = match ending {
@@ -166,13 +165,22 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
         LineEnding::Crlf => &b"\r\n"[..],
     };
 
-    let lines: Vec<_> = reader.lines().collect::<Result<_, _>>()?;
-    let line_count = lines.len();
+    let mut lines = reader.lines();
+    let mut last_line: Option<String> = None;
 
-    for (i, line) in lines.into_iter().enumerate() {
+    // Process all lines except the last
+    for line in lines.by_ref() {
+        if let Some(prev_line) = last_line.take() {
+            outfile.write_all(prev_line.as_bytes())?;
+            outfile.write_all(line_ending)?;
+        }
+        last_line = Some(line?);
+    }
+
+    // Write the last line, adding line ending only if original had trailing newline
+    if let Some(line) = last_line {
         outfile.write_all(line.as_bytes())?;
-        // Add line ending after each line, except the last one if original had no trailing newline
-        if i < line_count - 1 || has_trailing_newline {
+        if has_trailing_newline {
             outfile.write_all(line_ending)?;
         }
     }
@@ -184,6 +192,23 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     std::fs::rename(output_path, input_path)?;
 
     Ok(())
+}
+
+/// Checks if a file ends with a newline without reading the entire file
+fn check_trailing_newline(path: &Path) -> io::Result<bool> {
+    let mut file = File::open(path)?;
+    let file_size = file.metadata()?.len();
+
+    if file_size == 0 {
+        return Ok(false);
+    }
+
+    // Seek to the last byte
+    file.seek(io::SeekFrom::End(-1))?;
+    let mut last_byte = [0u8; 1];
+    file.read_exact(&mut last_byte)?;
+
+    Ok(last_byte[0] == b'\n')
 }
 
 /// Removes BOMs from files based on the file analysis
