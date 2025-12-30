@@ -5,6 +5,7 @@
 use anyhow::{Context, Result};
 use pico_args::Arguments;
 use rayon::prelude::*;
+use std::time::Instant;
 
 mod analysis;
 mod config;
@@ -34,6 +35,8 @@ fn main() -> Result<()> {
     }
 
     let config = parse_args(p_args)?;
+
+    let start_time = Instant::now();
 
     // expand glob patterns and get file paths
     let expanded_paths =
@@ -81,14 +84,21 @@ fn main() -> Result<()> {
     }
 
     // Process all files in parallel using rayon
+    let analysis_start = Instant::now();
     let results: Vec<_> = expanded_paths
         .par_iter()
         .map(|path| analyze_file(path, &config))
         .collect();
+    let analysis_duration = analysis_start.elapsed();
 
     // Print any errors and categorize them
     let mut has_errors = 0;
     let mut binary_files = 0;
+    let mut analyzed_files = 0;
+    let mut total_lf = 0usize;
+    let mut total_crlf = 0usize;
+    let mut mixed_files = 0usize;
+
     for result in &results {
         if let Some(error) = &result.error {
             let filename = result.path.display();
@@ -97,6 +107,13 @@ fn main() -> Result<()> {
             } else {
                 println!("\nFile: {filename}\terror: {error}");
                 has_errors += 1;
+            }
+        } else {
+            analyzed_files += 1;
+            total_lf += result.lf_count;
+            total_crlf += result.crlf_count;
+            if result.has_mixed_line_endings() {
+                mixed_files += 1;
             }
         }
     }
@@ -120,6 +137,21 @@ fn main() -> Result<()> {
     if config.remove_bom {
         remove_bom_from_files(&config, &results)?;
     }
+
+    // Print summary statistics
+    let total_duration = start_time.elapsed();
+    println!("\n--- Summary ---");
+    println!("Total files processed: {analyzed_files}");
+    if binary_files > 0 {
+        println!("Binary files skipped: {binary_files}");
+    }
+    if mixed_files > 0 {
+        println!("Files with mixed line endings: {mixed_files}");
+    }
+    println!("Total LF line endings: {total_lf}");
+    println!("Total CRLF line endings: {total_crlf}");
+    println!("Analysis time: {:.3}s", analysis_duration.as_secs_f64());
+    println!("Total time: {:.3}s", total_duration.as_secs_f64());
 
     Ok(())
 }
