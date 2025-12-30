@@ -1,6 +1,6 @@
 # Potential Improvements
 
-## 1. Binary file detection ✅ IN PROGRESS
+## 1. Binary file detection ✅ COMPLETED
 Currently the tool will try to process binary files if they match the glob pattern. Should skip or warn about binary files to avoid corrupting them.
 
 **Implementation approach:**
@@ -8,12 +8,16 @@ Currently the tool will try to process binary files if they match the glob patte
 - Skip binary files and report them separately
 - Add optional `--force` flag to override binary detection
 
-## 2. Empty file handling
+**Status:** Implemented in commit 112689d. Binary files are now automatically detected and skipped, with a summary count displayed.
+
+## 2. Empty file handling ✅ COMPLETED
 The `check_trailing_newline()` function seeks to -1 on empty files, which could fail. Should handle explicitly.
 
 **Implementation approach:**
 - Check file size first, return early for empty files
 - Add test cases for empty files
+
+**Status:** Already implemented correctly. File size is checked before seeking (line 202-204 in processing.rs).
 
 ## 3. Dry-run mode
 Add `--dry-run` flag to preview what would be changed without modifying files.
