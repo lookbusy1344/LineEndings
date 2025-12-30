@@ -382,14 +382,14 @@ pub fn delete_backup_files(results: &[FileAnalysis]) -> Result<()> {
 
         let backup_path = get_backup_path(&result.path);
         if backup_path.exists() {
-            match std::fs::remove_file(&backup_path) {
+            match trash::delete(&backup_path) {
                 Ok(()) => {
-                    println!("\"{}\"\tbackup deleted", backup_path.display());
+                    println!("\"{}\"\tbackup moved to trash", backup_path.display());
                     deleted_count += 1;
                 }
                 Err(e) => {
                     return Err(anyhow::anyhow!(
-                        "Failed to delete backup {}: {}",
+                        "Failed to move backup to trash {}: {}",
                         backup_path.display(),
                         e
                     ));
@@ -400,7 +400,7 @@ pub fn delete_backup_files(results: &[FileAnalysis]) -> Result<()> {
         }
     }
 
-    println!("Deleted {deleted_count} backup file(s), {not_found_count} not found");
+    println!("Moved {deleted_count} backup file(s) to trash, {not_found_count} not found");
 
     Ok(())
 }

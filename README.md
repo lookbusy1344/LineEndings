@@ -78,6 +78,7 @@ The binary will be available at `target/release/line-endings`.
 | `--windows-line-endings` | `-w` | Convert to Windows line endings (CRLF) |
 | `--linux-line-endings` | `-l` | Convert to Linux line endings (LF) |
 | `--remove-bom` | `-m` | Remove BOM from files |
+| `--delete-backups` | `-d` | Move .bak backup files to trash after operations |
 
 **Note**: The `--windows-line-endings` and `--linux-line-endings` options are mutually exclusive.
 
@@ -143,6 +144,7 @@ cargo fmt
 - **pico-args**: Lightweight command-line argument parsing
 - **rayon**: Parallel processing for performance
 - **glob**: File pattern matching
+- **trash**: Cross-platform trash/recycle bin support
 
 ## License
 
