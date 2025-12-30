@@ -49,7 +49,7 @@ At the end, show comprehensive statistics about the run.
 - Total LF and CRLF line endings across all files
 - Analysis time and total execution time
 
-## 6. Backup cleanup ✅ COMPLETED
+## 6. Backup cleanup ✅ COMPLETED + ENHANCED
 Add option to clean up `.bak` files after successful operations.
 
 **Implementation approach:**
@@ -57,11 +57,13 @@ Add option to clean up `.bak` files after successful operations.
 - Delete all `.bak` files created during session
 - Add confirmation prompt for safety
 
-**Status:** Implemented in commit d5ba37c. Added `--delete-backups` (-d) flag that:
-- Deletes .bak backup files for processed files
+**Status:** Implemented in commit d5ba37c and enhanced in commit 94844e8:
+- Added `--delete-backups` (-d) flag
+- Moves .bak backup files to system trash/recycle bin (instead of permanent deletion)
 - Can be combined with other operations (rewrite, BOM removal)
-- Reports count of deleted backups
-- No confirmation prompt needed as it only deletes backups for explicitly specified files
+- Reports count of moved backups
+- Cross-platform support (Windows, macOS, Linux) via `trash` crate
+- Safer than permanent deletion - files can be recovered from trash
 
 ## 7. File size limits
 Add optional max file size limit to avoid accidentally processing huge files.
