@@ -95,3 +95,12 @@ pub struct RewriteResult {
     pub rewritten: bool,
     pub error: Option<String>,
 }
+
+/// Stores the result of a BOM removal operation
+#[derive(Debug, Clone)]
+pub struct BomRemovalResult {
+    pub path: PathBuf,
+    pub removed: bool,
+    pub bom_type: Option<BomType>,
+    pub error: Option<String>,
+}

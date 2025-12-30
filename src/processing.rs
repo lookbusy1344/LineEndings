@@ -4,7 +4,9 @@ use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 
-use crate::types::{BomType, ConfigSettings, FileAnalysis, LineEnding, RewriteResult};
+use crate::types::{
+    BomRemovalResult, BomType, ConfigSettings, FileAnalysis, LineEnding, RewriteResult,
+};
 
 // Define constants for line ending characters and buffer size
 const BUFFER_SIZE: usize = 4096; // 4KB buffer for more efficient reading
@@ -189,10 +191,6 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
 /// # Errors
 ///
 /// Returns an error if BOM detection is not enabled or if BOM removal fails.
-///
-/// # Panics
-///
-/// Panics if a file marked as having a BOM doesn't have a valid BOM type.
 pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Result<()> {
     // Make sure we're only processing files that have been checked for BOMs
     if !config.check_bom {
@@ -203,56 +201,98 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
 
     println!();
 
-    // Keep track of how many files were processed
-    let mut bom_removed = 0;
-    let mut files_skipped = 0;
+    // Process files in parallel using rayon
+    let removal_results: Vec<BomRemovalResult> = results
+        .par_iter()
+        .map(process_file_for_bom_removal)
+        .collect();
 
-    // Process each file that has a BOM
-    for result in results {
-        // Skip files without BOMs or with errors
-        if result.error.is_some() || !result.has_bom() {
-            files_skipped += 1;
-            continue;
+    // Process results sequentially for consistent output and counting
+    let mut bom_removed = 0usize;
+    let mut files_skipped = 0usize;
+
+    for removal_result in &removal_results {
+        if let Some(error) = &removal_result.error {
+            return Err(anyhow::anyhow!(
+                "Failed to remove BOM from {}: {}",
+                removal_result.path.display(),
+                error
+            ));
         }
 
-        // Get the BOM type
-        let bom_type = result.bom_type.unwrap();
-
-        // Get the size of the BOM to skip
-        let bom_size = match bom_type {
-            BomType::None => 0,
-            BomType::Utf8 => 3,
-            BomType::Utf16Le | BomType::Utf16Be => 2,
-            BomType::Utf32Le | BomType::Utf32Be => 4,
-        };
-
-        if bom_size == 0 {
-            files_skipped += 1;
-            continue;
-        }
-
-        // Process the file to remove the BOM
-        match remove_bom_from_file(&result.path, bom_size) {
-            Ok(()) => {
+        if removal_result.removed {
+            if let Some(bom_type) = removal_result.bom_type {
                 println!(
                     "\"{}\"\tBOM removed: {bom_type}",
-                    result.path.display()
+                    removal_result.path.display()
                 );
-                bom_removed += 1;
             }
-            Err(e) => {
-                return Err(anyhow::anyhow!(
-                    "Failed to remove BOM from {}: {}",
-                    result.path.display(),
-                    e
-                ));
-            }
+            bom_removed += 1;
+        } else {
+            files_skipped += 1;
         }
     }
 
     println!("BOM removed from {bom_removed} file(s), skipped {files_skipped}");
 
     Ok(())
+}
+
+/// Processes a single file for BOM removal
+#[must_use]
+pub fn process_file_for_bom_removal(result: &FileAnalysis) -> BomRemovalResult {
+    // Skip files without BOMs or with errors
+    if result.error.is_some() || !result.has_bom() {
+        return BomRemovalResult {
+            path: result.path.clone(),
+            removed: false,
+            bom_type: None,
+            error: None,
+        };
+    }
+
+    // Get the BOM type safely using if-let
+    let Some(bom_type) = result.bom_type else {
+        return BomRemovalResult {
+            path: result.path.clone(),
+            removed: false,
+            bom_type: None,
+            error: None,
+        };
+    };
+
+    // Get the size of the BOM to skip
+    let bom_size = match bom_type {
+        BomType::None => 0,
+        BomType::Utf8 => 3,
+        BomType::Utf16Le | BomType::Utf16Be => 2,
+        BomType::Utf32Le | BomType::Utf32Be => 4,
+    };
+
+    if bom_size == 0 {
+        return BomRemovalResult {
+            path: result.path.clone(),
+            removed: false,
+            bom_type: Some(bom_type),
+            error: None,
+        };
+    }
+
+    // Process the file to remove the BOM
+    match remove_bom_from_file(&result.path, bom_size) {
+        Ok(()) => BomRemovalResult {
+            path: result.path.clone(),
+            removed: true,
+            bom_type: Some(bom_type),
+            error: None,
+        },
+        Err(e) => BomRemovalResult {
+            path: result.path.clone(),
+            removed: false,
+            bom_type: Some(bom_type),
+            error: Some(e.to_string()),
+        },
+    }
 }
 
 /// Removes a BOM from a file while preserving its content and line endings
