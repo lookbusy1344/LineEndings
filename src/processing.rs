@@ -341,17 +341,17 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
     let mut output_file = File::create(&output_path)?;
 
     // Skip the BOM
-    let mut buffer = vec![0; bom_size];
-    input_file.read_exact(&mut buffer)?;
+    let mut bom_buffer = vec![0; bom_size];
+    input_file.read_exact(&mut bom_buffer)?;
 
     // Copy the rest of the file directly (preserving line endings)
-    let mut buffer = [0; BUFFER_SIZE];
+    let mut copy_buffer = [0; BUFFER_SIZE];
     loop {
-        let bytes_read = input_file.read(&mut buffer)?;
+        let bytes_read = input_file.read(&mut copy_buffer)?;
         if bytes_read == 0 {
             break;
         }
-        output_file.write_all(&buffer[..bytes_read])?;
+        output_file.write_all(&copy_buffer[..bytes_read])?;
     }
 
     // Ensure all data is written before replacing files
