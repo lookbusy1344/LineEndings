@@ -7,6 +7,7 @@ use crate::types::{BomType, ConfigSettings, FileAnalysis};
 
 // Define constants for line ending characters
 const BUFFER_SIZE: usize = 4096; // 4KB buffer for more efficient reading
+const BINARY_CHECK_SIZE: usize = 8192; // 8KB for binary detection
 const LF: u8 = b'\n';
 const CR: u8 = b'\r';
 
@@ -19,6 +20,29 @@ const UTF32_BE_BOM: &[u8] = &[0x00, 0x00, 0xFE, 0xFF];
 
 /// Analyzes a single file for line endings and BOM
 pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnalysis {
+    // Check if file is binary (skip if detected)
+    match is_binary_file(&path) {
+        Ok(true) => {
+            return FileAnalysis {
+                path: path.as_ref().to_path_buf(),
+                lf_count: 0,
+                crlf_count: 0,
+                bom_type: None,
+                error: Some("Binary file detected, skipping".to_string()),
+            };
+        }
+        Err(e) => {
+            return FileAnalysis {
+                path: path.as_ref().to_path_buf(),
+                lf_count: 0,
+                crlf_count: 0,
+                bom_type: None,
+                error: Some(format!("Failed to check file type: {e}")),
+            };
+        }
+        Ok(false) => {} // Not binary, continue processing
+    }
+
     // Only detect BOM if check_bom is true
     let bom_type: Option<BomType> = if config.check_bom {
         match detect_bom(&path) {
@@ -163,4 +187,39 @@ pub fn detect_bom(file_path: impl AsRef<Path>) -> Result<BomType> {
     }
 
     Ok(BomType::None)
+}
+
+/// Detects if a file is binary by checking for null bytes and non-printable characters
+///
+/// # Errors
+///
+/// Returns an error if the file cannot be opened or read.
+pub fn is_binary_file(path: impl AsRef<Path>) -> Result<bool> {
+    let mut file = File::open(path)?;
+    let mut buffer = vec![0u8; BINARY_CHECK_SIZE];
+
+    let bytes_read = file.read(&mut buffer)?;
+    if bytes_read == 0 {
+        return Ok(false); // Empty file is not binary
+    }
+
+    let buffer = &buffer[..bytes_read];
+
+    // Check for null bytes (strong indicator of binary)
+    if buffer.contains(&0) {
+        return Ok(true);
+    }
+
+    // Count non-printable characters (excluding common whitespace)
+    let non_printable_count = buffer.iter().filter(|&&b| !is_text_byte(b)).count();
+
+    // If more than 30% non-printable, consider it binary
+    let threshold = bytes_read * 30 / 100;
+    Ok(non_printable_count > threshold)
+}
+
+/// Checks if a byte is a typical text character
+fn is_text_byte(b: u8) -> bool {
+    // Printable ASCII (32-126), or common whitespace
+    (32..=126).contains(&b) || b == b'\t' || b == b'\n' || b == b'\r' || b >= 128 // Allow UTF-8
 }

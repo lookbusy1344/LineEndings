@@ -86,17 +86,27 @@ fn main() -> Result<()> {
         .map(|path| analyze_file(path, &config))
         .collect();
 
-    // Print any errors
+    // Print any errors and categorize them
     let mut has_errors = 0;
+    let mut binary_files = 0;
     for result in &results {
         if let Some(error) = &result.error {
             let filename = result.path.display();
-            println!("\nFile: {filename}\terror: {error}");
-            has_errors += 1;
+            if error.contains("Binary file detected") {
+                binary_files += 1;
+            } else {
+                println!("\nFile: {filename}\terror: {error}");
+                has_errors += 1;
+            }
         }
     }
 
-    // bail if there are any files with errors
+    // Report binary files separately
+    if binary_files > 0 {
+        println!("\nSkipped {binary_files} binary file(s)");
+    }
+
+    // bail if there are any real errors (not binary files)
     if has_errors > 0 {
         return Err(anyhow::anyhow!("  Files with errors: {has_errors}"));
     }
