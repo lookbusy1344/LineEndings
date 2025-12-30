@@ -17,7 +17,29 @@ use analysis::analyze_file;
 use config::parse_args;
 use help::show_help;
 use processing::{delete_backup_files, remove_bom_from_files, rewrite_files};
+use types::FileAnalysis;
 use utils::get_paths_matching_glob;
+
+/// Formats and prints analysis results for a successfully analyzed file
+fn print_file_analysis(result: &FileAnalysis) {
+    let file_name = result.path.display();
+    let line_endings = if result.lf_count == 0 && result.crlf_count == 0 {
+        String::from("None")
+    } else if result.lf_count > 0 && result.crlf_count == 0 {
+        format!("LF {}", result.lf_count)
+    } else if result.lf_count == 0 && result.crlf_count > 0 {
+        format!("CRLF {}", result.crlf_count)
+    } else {
+        format!("Mixed LF {}, CRLF {}", result.lf_count, result.crlf_count)
+    };
+
+    let bom_info = match &result.bom_type {
+        None => String::new(), // no BOM check requested
+        Some(bom) => format!(", BOM: {bom}"),
+    };
+
+    println!("\"{file_name}\"\t{line_endings}{bom_info}");
+}
 
 fn main() -> Result<()> {
     // Help debugging in Zed by passing arguments directly
@@ -108,6 +130,8 @@ fn main() -> Result<()> {
                 has_errors += 1;
             }
         } else {
+            print_file_analysis(result);
+
             analyzed_files += 1;
             total_lf += result.lf_count;
             total_crlf += result.crlf_count;

@@ -71,7 +71,7 @@ While this distinction is intentional, it's confusing and the code has to handle
 
 ## Moderate Issues
 
-### 4. Side Effects in Counting Function
+### 4. Side Effects in Counting Function ✅ FIXED
 
 **Location:** `analysis.rs:124`
 
@@ -83,6 +83,8 @@ println!("\"{file_name}\"\t{line_endings}{bom_info}");
 
 **Severity:** Medium (design)
 **Recommendation:** Move printing logic to a separate function or return a structured result that the caller can format.
+
+**Resolution:** Removed printing side effect from `count_line_endings_in_file` and created a new `print_file_analysis()` helper function in main.rs. The counting function now only counts and returns results, while printing is handled by the caller.
 
 ---
 

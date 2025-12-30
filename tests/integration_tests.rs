@@ -326,13 +326,13 @@ fn test_count_line_endings_directly() {
     // Test direct line ending counting without config
     let windows_file = temp_dir.path().join("test_windows.txt");
     let (lf_count, crlf_count) =
-        count_line_endings_in_file(&windows_file, None).expect("Should count line endings");
+        count_line_endings_in_file(&windows_file).expect("Should count line endings");
     assert_eq!(lf_count, 0, "Windows file should have no LF");
     assert!(crlf_count > 0, "Windows file should have CRLF");
 
     let linux_file = temp_dir.path().join("test_linux.txt");
     let (lf_count, crlf_count) =
-        count_line_endings_in_file(&linux_file, None).expect("Should count line endings");
+        count_line_endings_in_file(&linux_file).expect("Should count line endings");
     assert!(lf_count > 0, "Linux file should have LF");
     assert_eq!(crlf_count, 0, "Linux file should have no CRLF");
 }

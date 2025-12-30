@@ -63,7 +63,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
     };
 
     // Then count line endings
-    match count_line_endings_in_file(&path, bom_type) {
+    match count_line_endings_in_file(&path) {
         Ok((lf_count, crlf_count)) => FileAnalysis {
             path: path.as_ref().to_path_buf(),
             lf_count,
@@ -86,35 +86,10 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened or read.
-pub fn count_line_endings_in_file(
-    path: impl AsRef<Path>,
-    bom_type: Option<BomType>,
-) -> Result<(usize, usize)> {
+pub fn count_line_endings_in_file(path: impl AsRef<Path>) -> Result<(usize, usize)> {
     let file = File::open(&path)?;
     let reader = BufReader::with_capacity(BUFFER_SIZE, file);
     let (lf_count, crlf_count) = count_line_endings(reader)?;
-
-    let file_name = path.as_ref().display();
-    let line_endings;
-
-    if lf_count == 0 && crlf_count == 0 {
-        line_endings = String::from("None");
-    } else if lf_count > 0 && crlf_count == 0 {
-        line_endings = format!("LF {lf_count}");
-    } else if lf_count == 0 && crlf_count > 0 {
-        line_endings = format!("CRLF {crlf_count}");
-    } else {
-        line_endings = format!("Mixed LF {lf_count}, CRLF {crlf_count}");
-    }
-
-    let bom_info = match bom_type {
-        None => String::new(), // no BOM check requested
-        Some(bom) => format!(", BOM: {bom}"),
-    };
-
-    // display results immediately, as Rayon is still running tasks in parallel
-    // needs to be a single println! to avoid interleaving output
-    println!("\"{file_name}\"\t{line_endings}{bom_info}");
 
     Ok((lf_count, crlf_count))
 }
