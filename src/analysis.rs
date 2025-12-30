@@ -149,12 +149,13 @@ pub fn detect_bom(file_path: impl AsRef<Path>) -> Result<BomType> {
     // Read up to 4 bytes from the beginning of the file
     let bytes_read = file.read(&mut buffer)?;
 
-    if bytes_read >= 3 && buffer[0..3] == UTF8_BOM[..] {
-        return Ok(BomType::Utf8);
-    } else if bytes_read >= 4 && buffer[0..4] == UTF32_LE_BOM[..] {
+    // Check longer BOMs first to avoid false matches (UTF-32 LE starts with UTF-16 LE bytes)
+    if bytes_read >= 4 && buffer[0..4] == UTF32_LE_BOM[..] {
         return Ok(BomType::Utf32Le);
     } else if bytes_read >= 4 && buffer[0..4] == UTF32_BE_BOM[..] {
         return Ok(BomType::Utf32Be);
+    } else if bytes_read >= 3 && buffer[0..3] == UTF8_BOM[..] {
+        return Ok(BomType::Utf8);
     } else if bytes_read >= 2 && buffer[0..2] == UTF16_LE_BOM[..] {
         return Ok(BomType::Utf16Le);
     } else if bytes_read >= 2 && buffer[0..2] == UTF16_BE_BOM[..] {
