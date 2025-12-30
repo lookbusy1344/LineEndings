@@ -79,6 +79,7 @@ The binary will be available at `target/release/line-endings`.
 The tool includes several safety features to protect your files:
 
 - **Automatic Backups**: Creates `.bak` backup files before any modifications
+- **Atomic File Operations**: Uses safe atomic write operations via temporary files to prevent corruption
 - **Binary File Detection**: Automatically skips binary files (executables, images, etc.)
 - **Trash Integration**: Backup cleanup moves files to trash/recycle bin (recoverable), not permanent deletion
 - **Memory Efficiency**: Streams large files without loading them entirely into memory
@@ -184,6 +185,7 @@ Typical performance: Processes thousands of files in seconds, with minimal memor
 - **rayon**: Parallel processing for performance
 - **glob**: File pattern matching
 - **trash**: Cross-platform trash/recycle bin support
+- **tempfile**: Safe atomic file operations
 
 ## License
 

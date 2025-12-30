@@ -15,7 +15,7 @@ The codebase is organized into focused modules:
 - **config.rs**: Command-line argument parsing using pico-args
 - **analysis.rs**: Core file analysis logic for detecting line endings and BOMs
 - **processing.rs**: File rewriting operations for fixing line endings and removing BOMs
-- **types.rs**: Core data structures including `ConfigSettings`, `FileAnalysis`, `BomType`, and `LineEnding`
+- **types.rs**: Core data structures including `ConfigSettings`, `FileAnalysis`, `BomType`, `LineEnding`, `LineEndingTarget`, `RewriteResult`, and `BomRemovalResult`
 - **utils.rs**: Utility functions for glob pattern expansion and file path handling
 - **help.rs**: Help text definition
 - **unit_tests.rs**: Comprehensive unit tests for the core functionality
@@ -60,8 +60,9 @@ The tool supports these flags:
 - `-w, --windows-line-endings`: Rewrite with Windows line endings (CRLF)
 - `-l, --linux-line-endings`: Rewrite with Linux line endings (LF)
 - `-m, --remove-bom`: Remove BOM from files that have one
+- `-d, --delete-backups`: Move .bak backup files to trash after operations
 
-Note: The `-w` and `-l` options are mutually exclusive.
+Note: The `-w` and `-l` options are mutually exclusive (enforced via `LineEndingTarget` enum).
 
 ## Dependencies
 
@@ -69,10 +70,8 @@ Note: The `-w` and `-l` options are mutually exclusive.
 - **pico-args**: Lightweight command-line argument parsing
 - **rayon**: Data parallelism for concurrent file processing
 - **glob**: File pattern matching and expansion
-
-### Dev Dependencies
-
-- **tempfile**: Temporary file creation for testing
+- **trash**: Cross-platform trash/recycle bin support for safe backup deletion
+- **tempfile**: Temporary file creation and safe atomic file operations
 
 ## Build Configuration
 
