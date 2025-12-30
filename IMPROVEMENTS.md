@@ -35,13 +35,19 @@ For large batches, show progress (e.g., "Processing 500/1000 files...").
 - Show periodic updates during parallel processing
 - Option to disable with `--quiet` flag
 
-## 5. Summary statistics
+## 5. Summary statistics ✅ COMPLETED
 At the end, show comprehensive statistics about the run.
 
 **Implementation approach:**
 - Track: total files, files changed, files skipped, total line endings converted
 - Display in clear summary format
 - Already partially implemented, could be expanded
+
+**Status:** Implemented in commit 35cd920. Now displays:
+- Total files processed and binary files skipped
+- Files with mixed line endings count
+- Total LF and CRLF line endings across all files
+- Analysis time and total execution time
 
 ## 6. Backup cleanup
 Add option to clean up `.bak` files after successful operations.
