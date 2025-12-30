@@ -14,7 +14,7 @@ This is a well-structured Rust CLI tool for analyzing and fixing line endings in
 
 ## Critical Issues
 
-### 1. Potential Data Loss on Atomic Rename Failure
+### 1. Potential Data Loss on Atomic Rename Failure ✅ FIXED
 
 **Location:** `processing.rs:192`, `processing.rs:361`
 
@@ -31,9 +31,11 @@ std::fs::rename(output_path, input_path)?;
 **Severity:** Medium
 **Recommendation:** Implement cleanup of temp file on failure, or use a proper atomic write library like `tempfile` with `persist()`.
 
+**Resolution:** Replaced manual temp file creation with `NamedTempFile::new_in()` from the tempfile crate. Using `persist()` for atomic replacement ensures automatic cleanup on failure.
+
 ---
 
-### 2. Temporary File Name Collision
+### 2. Temporary File Name Collision ✅ FIXED
 
 **Location:** `processing.rs:151-153`, `processing.rs:335-337`
 
@@ -47,6 +49,8 @@ let output_path = parent.join(new_file_name);
 
 **Severity:** Medium
 **Recommendation:** Use the `tempfile` crate (already in dev-dependencies) to create a unique temporary file in the same directory, then rename.
+
+**Resolution:** Replaced manual temp file naming with `NamedTempFile::new_in()` which generates unique temp file names, eliminating collision risk. Also moved tempfile from dev-dependencies to dependencies.
 
 ---
 

@@ -3,6 +3,7 @@ use rayon::prelude::*;
 use std::fs::File;
 use std::io::{self, BufRead, BufReader, Read, Seek, Write};
 use std::path::Path;
+use tempfile::NamedTempFile;
 
 use crate::types::{
     BomRemovalResult, BomType, ConfigSettings, FileAnalysis, LineEnding, RewriteResult,
@@ -145,12 +146,9 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     // Create backup if needed
     create_backup_if_needed(input_path)?;
 
-    // Create output_path by prepending an underscore to the filename
+    // Create temporary file in the same directory as the input file
     let parent = input_path.parent().unwrap_or_else(|| Path::new(""));
-    let file_name = input_path.file_name().unwrap_or_default();
-    let mut new_file_name = String::from("_");
-    new_file_name.push_str(&file_name.to_string_lossy());
-    let output_path = parent.join(new_file_name);
+    let mut temp_file = NamedTempFile::new_in(parent)?;
 
     // Check if file ends with a newline by reading only the last byte
     let has_trailing_newline = check_trailing_newline(input_path)?;
@@ -158,7 +156,6 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     // Process file line by line without loading into memory
     let infile = File::open(input_path)?;
     let reader = BufReader::with_capacity(BUFFER_SIZE, infile);
-    let mut outfile = File::create(&output_path)?;
 
     let line_ending: &[u8] = match ending {
         LineEnding::Lf => &b"\n"[..],
@@ -171,25 +168,25 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     // Process all lines except the last
     for line in lines.by_ref() {
         if let Some(prev_line) = last_line.take() {
-            outfile.write_all(prev_line.as_bytes())?;
-            outfile.write_all(line_ending)?;
+            temp_file.write_all(prev_line.as_bytes())?;
+            temp_file.write_all(line_ending)?;
         }
         last_line = Some(line?);
     }
 
     // Write the last line, adding line ending only if original had trailing newline
     if let Some(line) = last_line {
-        outfile.write_all(line.as_bytes())?;
+        temp_file.write_all(line.as_bytes())?;
         if has_trailing_newline {
-            outfile.write_all(line_ending)?;
+            temp_file.write_all(line_ending)?;
         }
     }
 
     // Ensure all data is written before replacing files
-    outfile.flush()?;
+    temp_file.flush()?;
 
-    // Replace the original file with the new one
-    std::fs::rename(output_path, input_path)?;
+    // Atomically replace the original file with the temp file
+    temp_file.persist(input_path)?;
 
     Ok(())
 }
@@ -329,16 +326,12 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
     // Create backup if needed
     create_backup_if_needed(path)?;
 
-    // Create output_path by prepending an underscore to the filename
+    // Create temporary file in the same directory as the input file
     let parent = path.parent().unwrap_or_else(|| Path::new(""));
-    let file_name = path.file_name().unwrap_or_default();
-    let mut new_file_name = String::from("_");
-    new_file_name.push_str(&file_name.to_string_lossy());
-    let output_path = parent.join(new_file_name);
+    let mut temp_file = NamedTempFile::new_in(parent)?;
 
     // Open the original file for reading
     let mut input_file = File::open(path)?;
-    let mut output_file = File::create(&output_path)?;
 
     // Skip the BOM
     let mut bom_buffer = vec![0; bom_size];
@@ -351,14 +344,14 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
         if bytes_read == 0 {
             break;
         }
-        output_file.write_all(&copy_buffer[..bytes_read])?;
+        temp_file.write_all(&copy_buffer[..bytes_read])?;
     }
 
     // Ensure all data is written before replacing files
-    output_file.flush()?;
+    temp_file.flush()?;
 
-    // Replace the original file with the new one
-    std::fs::rename(output_path, path)?;
+    // Atomically replace the original file with the temp file
+    temp_file.persist(path)?;
 
     Ok(())
 }
