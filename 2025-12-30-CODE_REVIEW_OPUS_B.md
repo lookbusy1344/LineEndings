@@ -201,7 +201,7 @@ pub mod unit_tests;
 
 ## Minor Issues / Code Smells
 
-### 11. Excessive Booleans in ConfigSettings
+### 11. Excessive Booleans in ConfigSettings ✅ FIXED
 
 **Location:** `types.rs:35-46`
 
@@ -222,6 +222,8 @@ pub struct ConfigSettings {
 
 **Severity:** Low (code smell)
 **Recommendation:** Consider using a `LineEndingTarget` enum instead of two mutually exclusive bools (`set_linux`, `set_windows`).
+
+**Resolution:** Created `LineEndingTarget` enum with variants None, Linux, and Windows. Replaced the two mutually exclusive bools with this enum, reducing bool count from 7 to 5 and preventing invalid state where both flags could be true. The struct still has the excessive_bools allow attribute due to remaining independent boolean flags.
 
 ---
 

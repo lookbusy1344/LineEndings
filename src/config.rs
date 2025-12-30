@@ -1,7 +1,7 @@
 use anyhow::Result;
 use pico_args::Arguments;
 
-use crate::types::ConfigSettings;
+use crate::types::{ConfigSettings, LineEndingTarget};
 
 /// Parses command line arguments and returns configuration settings.
 ///
@@ -20,11 +20,17 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
 
     let folder: Option<String> = args.opt_value_from_str(["-f", "--folder"])?;
 
-    if set_linux && set_windows {
-        return Err(anyhow::anyhow!(
-            "Cannot set both Linux and Windows line endings at the same time"
-        ));
-    }
+    // Convert boolean flags to LineEndingTarget enum
+    let line_ending_target = match (set_linux, set_windows) {
+        (true, true) => {
+            return Err(anyhow::anyhow!(
+                "Cannot set both Linux and Windows line endings at the same time"
+            ));
+        }
+        (true, false) => LineEndingTarget::Linux,
+        (false, true) => LineEndingTarget::Windows,
+        (false, false) => LineEndingTarget::None,
+    };
 
     // Get all file paths from command line
     let mut file_paths = Vec::new();
@@ -56,8 +62,7 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
 
     Ok(ConfigSettings {
         case_sensitive,
-        set_linux,
-        set_windows,
+        line_ending_target,
         check_bom: check_bom || remove_bom, // need to check BOM if removing it
         remove_bom,
         recursive,

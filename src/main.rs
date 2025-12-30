@@ -17,7 +17,7 @@ use analysis::analyze_file;
 use config::parse_args;
 use help::show_help;
 use processing::{delete_backup_files, remove_bom_from_files, rewrite_files};
-use types::FileAnalysis;
+use types::{FileAnalysis, LineEndingTarget};
 use utils::get_paths_matching_glob;
 
 /// Formats and prints analysis results for a successfully analyzed file
@@ -92,11 +92,10 @@ fn main() -> Result<()> {
     }
 
     // Only show line ending alteration if one is set
-    match (config.set_linux, config.set_windows) {
-        (true, false) => config_parts.push("Line ending alteration: Linux (LF)".to_string()),
-        (false, true) => config_parts.push("Line ending alteration: Windows (CRLF)".to_string()),
-        (true, true) => config_parts.push("Line ending alteration: Invalid (both set)".to_string()),
-        (false, false) => {} // Don't show anything for no alteration
+    match config.line_ending_target {
+        LineEndingTarget::Linux => config_parts.push("Line ending alteration: Linux (LF)".to_string()),
+        LineEndingTarget::Windows => config_parts.push("Line ending alteration: Windows (CRLF)".to_string()),
+        LineEndingTarget::None => {} // Don't show anything for no alteration
     }
 
     // Display configuration if there are any non-default options

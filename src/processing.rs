@@ -6,7 +6,8 @@ use std::path::Path;
 use tempfile::NamedTempFile;
 
 use crate::types::{
-    BomRemovalResult, BomType, ConfigSettings, FileAnalysis, LineEnding, RewriteResult,
+    BomRemovalResult, BomType, ConfigSettings, FileAnalysis, LineEnding, LineEndingTarget,
+    RewriteResult,
 };
 
 // Define constants for line ending characters and buffer size
@@ -23,10 +24,12 @@ pub fn rewrite_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Resul
         return Err(anyhow::anyhow!("No line ending rewrite option set"));
     }
 
-    let ending = if config.set_linux {
-        LineEnding::Lf
-    } else {
-        LineEnding::Crlf
+    let ending = match config.line_ending_target {
+        LineEndingTarget::Linux => LineEnding::Lf,
+        LineEndingTarget::Windows => LineEnding::Crlf,
+        LineEndingTarget::None => {
+            return Err(anyhow::anyhow!("No line ending rewrite option set"));
+        }
     };
 
     println!();
@@ -85,7 +88,9 @@ pub fn process_file_for_rewrite(
         // mixed line endings, always rebuild
         rebuild = true;
     }
-    if (config.set_linux && result.is_crlf_only()) || (config.set_windows && result.is_lf_only()) {
+    if (config.line_ending_target == LineEndingTarget::Linux && result.is_crlf_only())
+        || (config.line_ending_target == LineEndingTarget::Windows && result.is_lf_only())
+    {
         // rebuild if its exclusively the wrong type
         rebuild = true;
     }

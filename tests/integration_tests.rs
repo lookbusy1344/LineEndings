@@ -5,7 +5,7 @@ use tempfile::TempDir;
 
 use line_endings::analysis::{analyze_file, count_line_endings_in_file, detect_bom};
 use line_endings::processing::{remove_bom_from_files, rewrite_files};
-use line_endings::types::{BomType, ConfigSettings};
+use line_endings::types::{BomType, ConfigSettings, LineEndingTarget};
 
 /// Helper function to create a temporary directory and copy test files into it
 fn setup_test_environment() -> TempDir {
@@ -43,8 +43,7 @@ fn copy_dir_recursive(src: &Path, dst: &Path) -> std::io::Result<()> {
 fn create_test_config() -> ConfigSettings {
     ConfigSettings {
         case_sensitive: false,
-        set_linux: false,
-        set_windows: false,
+        line_ending_target: LineEndingTarget::None,
         check_bom: true,
         remove_bom: false,
         recursive: true,
@@ -173,7 +172,7 @@ fn test_subdirectory_files() {
 fn test_line_ending_conversion_to_windows() {
     let temp_dir = setup_test_environment();
     let mut config = create_test_config();
-    config.set_windows = true; // Enable Windows line ending conversion
+    config.line_ending_target = LineEndingTarget::Windows; // Enable Windows line ending conversion
 
     // Convert Linux file to Windows line endings
     let linux_file = temp_dir.path().join("test_linux.txt");
@@ -203,7 +202,7 @@ fn test_line_ending_conversion_to_windows() {
 fn test_line_ending_conversion_to_linux() {
     let temp_dir = setup_test_environment();
     let mut config = create_test_config();
-    config.set_linux = true; // Enable Linux line ending conversion
+    config.line_ending_target = LineEndingTarget::Linux; // Enable Linux line ending conversion
 
     // Convert Windows file to Linux line endings
     let windows_file = temp_dir.path().join("test_windows.txt");
@@ -259,7 +258,7 @@ fn test_combined_bom_removal_and_line_ending_conversion() {
     let temp_dir = setup_test_environment();
     let mut config = create_test_config();
     config.remove_bom = true;
-    config.set_linux = true; // Convert to LF and remove BOM
+    config.line_ending_target = LineEndingTarget::Linux; // Convert to LF and remove BOM
 
     let has_bom_path = temp_dir.path().join("has_bom.txt");
     let original_analysis = analyze_file(&has_bom_path, &config);
@@ -594,7 +593,7 @@ fn test_large_file() {
 fn test_backup_file_created_on_line_ending_conversion() {
     let temp_dir = setup_test_environment();
     let mut config = create_test_config();
-    config.set_windows = true;
+    config.line_ending_target = LineEndingTarget::Windows;
 
     let linux_file = temp_dir.path().join("test_linux.txt");
     let backup_file = linux_file.with_extension("txt.bak");
@@ -642,7 +641,7 @@ fn test_backup_file_created_on_bom_removal() {
 fn test_backup_not_overwritten_on_multiple_operations() {
     let temp_dir = setup_test_environment();
     let mut config = create_test_config();
-    config.set_windows = true;
+    config.line_ending_target = LineEndingTarget::Windows;
 
     let linux_file = temp_dir.path().join("test_linux.txt");
     let backup_file = linux_file.with_extension("txt.bak");
@@ -663,8 +662,7 @@ fn test_backup_not_overwritten_on_multiple_operations() {
     std::thread::sleep(std::time::Duration::from_millis(10));
 
     // Second conversion (convert back to Linux)
-    config.set_windows = false;
-    config.set_linux = true;
+    config.line_ending_target = LineEndingTarget::Linux;
     let analysis = analyze_file(&linux_file, &config);
     let analyses = vec![analysis];
     let result = rewrite_files(&config, &analyses);
@@ -695,7 +693,7 @@ fn test_trailing_newline_preserved_on_conversion() {
     fs::write(&file_with_trailing, b"Line 1\nLine 2\nLine 3\n").expect("Failed to write file");
 
     let mut config = create_test_config();
-    config.set_windows = true;
+    config.line_ending_target = LineEndingTarget::Windows;
 
     let analysis = analyze_file(&file_with_trailing, &config);
     let analyses = vec![analysis];
@@ -719,7 +717,7 @@ fn test_no_trailing_newline_preserved_on_conversion() {
     fs::write(&file_no_trailing, b"Line 1\nLine 2\nLine 3").expect("Failed to write file");
 
     let mut config = create_test_config();
-    config.set_windows = true;
+    config.line_ending_target = LineEndingTarget::Windows;
 
     let analysis = analyze_file(&file_no_trailing, &config);
     let analyses = vec![analysis];
@@ -895,7 +893,7 @@ fn test_non_matching_glob_pattern() {
 fn test_multiple_files_processed_correctly() {
     let temp_dir = setup_test_environment();
     let mut config = create_test_config();
-    config.set_linux = true;
+    config.line_ending_target = LineEndingTarget::Linux;
 
     // Analyze multiple files
     let windows_file = temp_dir.path().join("test_windows.txt");

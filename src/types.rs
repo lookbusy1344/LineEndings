@@ -31,12 +31,19 @@ pub enum LineEnding {
     Crlf, // Windows style (\r\n)
 }
 
+/// Target line ending for file conversion
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
+pub enum LineEndingTarget {
+    None,    // No conversion
+    Linux,   // Convert to LF
+    Windows, // Convert to CRLF
+}
+
 /// Configuration settings parsed from command line arguments
 #[allow(clippy::struct_excessive_bools)]
 pub struct ConfigSettings {
     pub case_sensitive: bool,
-    pub set_linux: bool,
-    pub set_windows: bool,
+    pub line_ending_target: LineEndingTarget,
     pub check_bom: bool,
     pub remove_bom: bool,
     pub recursive: bool,
@@ -49,7 +56,7 @@ impl ConfigSettings {
     /// Returns true if any line ending rewrite option is set
     #[must_use]
     pub fn has_rewrite_option(&self) -> bool {
-        self.set_linux || self.set_windows
+        self.line_ending_target != LineEndingTarget::None
     }
 }
 
