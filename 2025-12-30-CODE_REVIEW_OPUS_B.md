@@ -153,7 +153,7 @@ pico-args = ">= 0.5"
 
 ---
 
-### 9. Dead Code Allowed
+### 9. Dead Code Allowed ✅ FIXED
 
 **Location:** `main.rs:2`
 
@@ -166,9 +166,11 @@ pico-args = ">= 0.5"
 **Severity:** Low
 **Recommendation:** Remove this attribute since there's no dead code.
 
+**Resolution:** Removed `#![allow(dead_code)]` attribute. Clippy passes with no warnings.
+
 ---
 
-### 10. Public Unit Tests Module
+### 10. Public Unit Tests Module ✅ FIXED
 
 **Location:** `lib.rs:6`
 
@@ -180,6 +182,8 @@ pub mod unit_tests;
 
 **Severity:** Low
 **Recommendation:** Remove `pub` or use `#[cfg(test)]` to hide from library consumers.
+
+**Resolution:** Added `#[cfg(test)]` attribute to hide unit_tests module from library consumers.
 
 ---
 
