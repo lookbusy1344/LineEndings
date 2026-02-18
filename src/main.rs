@@ -94,10 +94,10 @@ fn main() -> Result<()> {
     // Only show line ending alteration if one is set
     match config.line_ending_target {
         LineEndingTarget::Linux => {
-            config_parts.push("Line ending alteration: Linux (LF)".to_string())
+            config_parts.push("Line ending alteration: Linux (LF)".to_string());
         }
         LineEndingTarget::Windows => {
-            config_parts.push("Line ending alteration: Windows (CRLF)".to_string())
+            config_parts.push("Line ending alteration: Windows (CRLF)".to_string());
         }
         LineEndingTarget::None => {} // Don't show anything for no alteration
     }
@@ -171,6 +171,28 @@ fn main() -> Result<()> {
 
     // Print summary statistics
     let total_duration = start_time.elapsed();
+    print_summary(
+        analyzed_files,
+        binary_files,
+        mixed_files,
+        total_lf,
+        total_crlf,
+        analysis_duration,
+        total_duration,
+    );
+
+    Ok(())
+}
+
+fn print_summary(
+    analyzed_files: usize,
+    binary_files: usize,
+    mixed_files: usize,
+    total_lf: usize,
+    total_crlf: usize,
+    analysis_duration: std::time::Duration,
+    total_duration: std::time::Duration,
+) {
     println!("\n--- Summary ---");
     println!("Total files processed: {analyzed_files}");
     if binary_files > 0 {
@@ -183,6 +205,4 @@ fn main() -> Result<()> {
     println!("Total CRLF line endings: {total_crlf}");
     println!("Analysis time: {:.3}s", analysis_duration.as_secs_f64());
     println!("Total time: {:.3}s", total_duration.as_secs_f64());
-
-    Ok(())
 }
