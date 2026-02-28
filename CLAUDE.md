@@ -39,8 +39,7 @@ cargo run -- "test*.txt"
 cargo run -- test_lines.txt
 
 # Run Clippy with strict linting
-cargo clippy --color=always -- -D clippy::all -D clippy::pedantic
-cargo clippy --all-targets --all-features -- -D warnings -F unsafe_code
+cargo clippy --all-targets --all-features -- -D clippy::all -D clippy::pedantic -F unsafe_code
 
 # Format code for consistent style (run after all changes)
 cargo fmt
