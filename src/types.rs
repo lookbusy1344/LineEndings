@@ -47,7 +47,7 @@ pub struct ConfigSettings {
     pub check_bom: bool,
     pub remove_bom: bool,
     pub recursive: bool,
-    pub trash_backups: bool,
+    pub no_trash: bool,
     pub supplied_paths: Vec<String>,
     pub folder: Option<String>,
 }

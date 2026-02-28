@@ -87,6 +87,9 @@ fn main() -> Result<()> {
     if config.remove_bom {
         config_parts.push("Remove BOM: true".to_string());
     }
+    if config.no_trash {
+        config_parts.push("Trash backups: disabled".to_string());
+    }
 
     // Only show line ending alteration if one is set
     match config.line_ending_target {
@@ -159,8 +162,8 @@ fn main() -> Result<()> {
         remove_bom_from_files(&config, &results)?;
     }
 
-    // Move backup files to trash if requested
-    if config.trash_backups {
+    // Move backup files to trash unless --no-trash was specified
+    if !config.no_trash && (config.has_rewrite_option() || config.remove_bom) {
         trash_backup_files(&results)?;
     }
 

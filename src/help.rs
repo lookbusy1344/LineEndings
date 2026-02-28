@@ -8,7 +8,7 @@ OPTIONS:
     -c, --case-sensitive         Case-sensitive glob matching
     -b, --bom                    Check for Byte Order Mark (BOM) in files
     -r, --recursive              Recursively search subdirectories
-    -t, --trash                  Move .bak backup files to trash after successful operations
+    -n, --no-trash               Keep .bak backup files (default: moved to trash after operations)
 
 FIXES:
     -w, --windows-line-endings   Rewrite with Windows line endings (CRLF)
