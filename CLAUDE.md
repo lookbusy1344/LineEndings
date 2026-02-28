@@ -80,5 +80,14 @@ The project uses Rust 2024 edition with aggressive release optimizations:
 - Debug symbols stripped
 - Panic abort strategy
 
+**Before every commit, all of the following must pass:**
+
+```bash
+cargo build --all-targets
+cargo clippy --all-targets --all-features -- -D clippy::all -D clippy::pedantic -F unsafe_code
+cargo fmt
+cargo test
+```
+
 **Security:**
 - Run `cargo audit` once a day when working on this project to check for security vulnerabilities in dependencies
