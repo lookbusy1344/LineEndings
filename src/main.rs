@@ -15,7 +15,7 @@ mod utils;
 use analysis::analyze_file;
 use config::parse_args;
 use help::show_help;
-use processing::{delete_backup_files, remove_bom_from_files, rewrite_files};
+use processing::{remove_bom_from_files, rewrite_files, trash_backup_files};
 use types::{FileAnalysis, LineEndingTarget};
 use utils::get_paths_matching_glob;
 
@@ -159,9 +159,9 @@ fn main() -> Result<()> {
         remove_bom_from_files(&config, &results)?;
     }
 
-    // Delete backup files if requested
-    if config.delete_backups {
-        delete_backup_files(&results)?;
+    // Move backup files to trash if requested
+    if config.trash_backups {
+        trash_backup_files(&results)?;
     }
 
     // Print summary statistics

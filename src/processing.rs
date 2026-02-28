@@ -365,7 +365,7 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
 /// # Errors
 ///
 /// Returns an error if backup deletion fails.
-pub fn delete_backup_files(results: &[FileAnalysis]) -> Result<()> {
+pub fn trash_backup_files(results: &[FileAnalysis]) -> Result<()> {
     println!();
 
     let mut deleted_count = 0usize;
