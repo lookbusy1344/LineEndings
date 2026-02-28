@@ -15,7 +15,7 @@ A fast, safe, and efficient Rust command-line tool for analyzing and fixing line
 - **File Fixing**: Rewrite files with consistent line endings or remove BOMs
 - **Recursive Search**: Optionally search subdirectories
 - **Safe Backup System**: Creates `.bak` backups before modifying files
-- **Trash Integration**: Optionally move backup files to system trash/recycle bin
+- **Trash Integration**: Backup files are automatically moved to system trash/recycle bin after operations (use `--no-trash` to keep them)
 - **Statistics & Timing**: Comprehensive summary with execution times
 
 ## Installation
@@ -60,8 +60,8 @@ The binary will be available at `target/release/line-endings`.
 # Remove BOM from files
 ./line-endings --remove-bom "*.txt"
 
-# Clean up backup files after conversion
-./line-endings --linux-line-endings --delete-backups "*.txt"
+# Convert to LF, keeping backup files (default is to trash them)
+./line-endings --linux-line-endings --no-trash "*.txt"
 ```
 
 ### Advanced Options
@@ -70,8 +70,8 @@ The binary will be available at `target/release/line-endings`.
 # Search in specific folder with case-sensitive matching
 ./line-endings --folder /path/to/files --case-sensitive "*.TXT"
 
-# Combine operations: convert to LF, remove BOM, and clean up backups
-./line-endings --linux-line-endings --remove-bom --delete-backups "*.txt"
+# Combine operations: convert to LF and remove BOM (backups trashed automatically)
+./line-endings --linux-line-endings --remove-bom "*.txt"
 ```
 
 ## Safety Features
@@ -81,7 +81,7 @@ The tool includes several safety features to protect your files:
 - **Automatic Backups**: Creates `.bak` backup files before any modifications
 - **Atomic File Operations**: Uses safe atomic write operations via temporary files to prevent corruption
 - **Binary File Detection**: Automatically skips binary files (executables, images, etc.)
-- **Trash Integration**: Backup cleanup moves files to trash/recycle bin (recoverable), not permanent deletion
+- **Trash Integration**: Backup files are automatically moved to trash/recycle bin after operations (recoverable). Use `--no-trash` to retain them instead
 - **Memory Efficiency**: Streams large files without loading them entirely into memory
 - **Error Handling**: Stops on errors and reports issues clearly
 
@@ -99,7 +99,7 @@ The tool includes several safety features to protect your files:
 | `--windows-line-endings` | `-w` | Convert to Windows line endings (CRLF) |
 | `--linux-line-endings` | `-l` | Convert to Linux line endings (LF) |
 | `--remove-bom` | `-m` | Remove BOM from files |
-| `--delete-backups` | `-d` | Move .bak backup files to trash after operations |
+| `--no-trash` | `-n` | Keep .bak backup files (default: moved to trash after operations) |
 
 **Note**: The `--windows-line-endings` and `--linux-line-endings` options are mutually exclusive.
 
@@ -131,8 +131,8 @@ The tool includes several safety features to protect your files:
 # Standardize all source files to LF endings
 ./line-endings --linux-line-endings --recursive "**/*.{rs,js,py}"
 
-# Clean up text files (LF + remove BOM + delete backups)
-./line-endings --linux-line-endings --remove-bom --delete-backups "*.txt"
+# Clean up text files (LF + remove BOM, backups trashed automatically)
+./line-endings --linux-line-endings --remove-bom "*.txt"
 ```
 
 ## Development

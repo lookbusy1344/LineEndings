@@ -26,59 +26,16 @@ The tool uses parallel processing via Rayon to analyze multiple files concurrent
 ## Common Development Commands
 
 ```bash
-# Build the project
 cargo build
-
-# Build optimized release version
 cargo build --release
-
-# Run with basic file pattern
-cargo run -- "test*.txt"
-
-# Run with specific test file
-cargo run -- test_lines.txt
-
-# Run Clippy with strict linting
 cargo clippy --all-targets --all-features -- -D clippy::all -D clippy::pedantic -F unsafe_code
-
-# Format code for consistent style (run after all changes)
 cargo fmt
-
-# Run tests (if any exist)
 cargo test
 ```
 
-## Command Line Options
-
-The tool supports these flags:
-- `-h, --help`: Prints help information
-- `-f, --folder <FOLDER>`: Specify the folder to search in (default: current directory)
-- `-c, --case-sensitive`: Case-sensitive glob matching
-- `-b, --bom`: Check for Byte Order Mark (BOM) in files
-- `-r, --recursive`: Recursively search subdirectories
-- `-w, --windows-line-endings`: Rewrite with Windows line endings (CRLF)
-- `-l, --linux-line-endings`: Rewrite with Linux line endings (LF)
-- `-m, --remove-bom`: Remove BOM from files that have one
-- `-d, --delete-backups`: Move .bak backup files to trash after operations
-
-Note: The `-w` and `-l` options are mutually exclusive (enforced via `LineEndingTarget` enum).
-
-## Dependencies
-
-- **anyhow**: Error handling with context
-- **pico-args**: Lightweight command-line argument parsing
-- **rayon**: Data parallelism for concurrent file processing
-- **glob**: File pattern matching and expansion
-- **trash**: Cross-platform trash/recycle bin support for safe backup deletion
-- **tempfile**: Temporary file creation and safe atomic file operations
-
 ## Build Configuration
 
-The project uses Rust 2024 edition with aggressive release optimizations:
-- LTO enabled for smaller binaries
-- Single codegen unit
-- Debug symbols stripped
-- Panic abort strategy
+The project uses Rust 2024 edition with aggressive release optimizations (LTO, single codegen unit, stripped debug symbols, panic abort). See `Cargo.toml` for details.
 
 **Before every commit, all of the following must pass:**
 
