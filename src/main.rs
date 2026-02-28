@@ -1,6 +1,4 @@
 #![forbid(unsafe_code)]
-// #![allow(unused_imports)]
-// #![allow(unused_variables)]
 
 use anyhow::{Context, Result};
 use pico_args::Arguments;
@@ -43,14 +41,8 @@ fn print_file_analysis(result: &FileAnalysis) {
 }
 
 fn main() -> Result<()> {
-    // Help debugging in Zed by passing arguments directly
-    // let debug_args: Vec<std::ffi::OsString> = vec!["test*.txt".into()];
-    // let mut p_args = Arguments::from_vec(debug_args);
-
-    // Parse command line arguments
     let mut p_args = Arguments::from_env();
 
-    // special handling of help
     if p_args.contains(["-h", "--help"]) {
         show_help();
         return Ok(());
