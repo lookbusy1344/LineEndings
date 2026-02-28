@@ -907,10 +907,7 @@ fn test_rewrite_files_collects_all_errors() {
     fs::write(&file1, b"Line 1\nLine 2\n").expect("Failed to write file1");
     fs::write(&file2, b"Line 1\nLine 2\n").expect("Failed to write file2");
 
-    let file_list = vec![
-        analyze_file(&file1, &config),
-        analyze_file(&file2, &config),
-    ];
+    let file_list = vec![analyze_file(&file1, &config), analyze_file(&file2, &config)];
 
     // Delete both files so both rewrites fail
     fs::remove_file(&file1).expect("Should delete file1");
