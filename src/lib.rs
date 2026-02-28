@@ -1,3 +1,4 @@
+#![forbid(unsafe_code)]
 // Library crate for line_endings to expose modules for testing
 pub mod analysis;
 pub mod config;
