@@ -182,8 +182,8 @@ fn test_line_ending_conversion_to_windows() {
         "Original file should have LF only"
     );
 
-    let analyses = vec![original_analysis];
-    let result = rewrite_files(&config, &analyses);
+    let file_list = vec![original_analysis];
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "File rewrite should succeed");
 
     // Verify conversion
@@ -212,8 +212,8 @@ fn test_line_ending_conversion_to_linux() {
         "Original file should have CRLF only"
     );
 
-    let analyses = vec![original_analysis];
-    let result = rewrite_files(&config, &analyses);
+    let file_list = vec![original_analysis];
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "File rewrite should succeed");
 
     // Verify conversion
@@ -239,8 +239,8 @@ fn test_bom_removal() {
     let original_analysis = analyze_file(&has_bom_path, &config);
     assert!(original_analysis.has_bom(), "Original file should have BOM");
 
-    let analyses = vec![original_analysis];
-    let result = remove_bom_from_files(&config, &analyses);
+    let file_list = vec![original_analysis];
+    let result = remove_bom_from_files(&config, &file_list);
     assert!(result.is_ok(), "BOM removal should succeed");
 
     // Verify BOM removal
@@ -268,16 +268,16 @@ fn test_combined_bom_removal_and_line_ending_conversion() {
         "Original file should have CRLF only"
     );
 
-    let analyses = vec![original_analysis];
+    let file_list = vec![original_analysis];
 
     // First convert line endings
-    let result = rewrite_files(&config, &analyses);
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "Line ending conversion should succeed");
 
     // Then remove BOM
     let intermediate_analysis = analyze_file(&has_bom_path, &config);
-    let analyses_after_conversion = vec![intermediate_analysis];
-    let result = remove_bom_from_files(&config, &analyses_after_conversion);
+    let bom_files = vec![intermediate_analysis];
+    let result = remove_bom_from_files(&config, &bom_files);
     assert!(result.is_ok(), "BOM removal should succeed");
 
     // Verify both operations
@@ -602,8 +602,8 @@ fn test_backup_file_created_on_line_ending_conversion() {
     assert!(!backup_file.exists(), "Backup should not exist initially");
 
     let analysis = analyze_file(&linux_file, &config);
-    let analyses = vec![analysis];
-    let result = rewrite_files(&config, &analyses);
+    let file_list = vec![analysis];
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "Rewrite should succeed");
 
     // Verify backup was created
@@ -626,8 +626,8 @@ fn test_backup_file_created_on_bom_removal() {
     assert!(!backup_file.exists(), "Backup should not exist initially");
 
     let analysis = analyze_file(&has_bom_path, &config);
-    let analyses = vec![analysis];
-    let result = remove_bom_from_files(&config, &analyses);
+    let file_list = vec![analysis];
+    let result = remove_bom_from_files(&config, &file_list);
     assert!(result.is_ok(), "BOM removal should succeed");
 
     // Verify backup was created
@@ -648,8 +648,8 @@ fn test_backup_not_overwritten_on_multiple_operations() {
 
     // First conversion
     let analysis = analyze_file(&linux_file, &config);
-    let analyses = vec![analysis];
-    let result = rewrite_files(&config, &analyses);
+    let file_list = vec![analysis];
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "First rewrite should succeed");
 
     // Get backup creation time
@@ -664,8 +664,8 @@ fn test_backup_not_overwritten_on_multiple_operations() {
     // Second conversion (convert back to Linux)
     config.line_ending_target = LineEndingTarget::Linux;
     let analysis = analyze_file(&linux_file, &config);
-    let analyses = vec![analysis];
-    let result = rewrite_files(&config, &analyses);
+    let file_list = vec![analysis];
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "Second rewrite should succeed");
 
     // Verify backup was NOT overwritten
@@ -696,8 +696,8 @@ fn test_trailing_newline_preserved_on_conversion() {
     config.line_ending_target = LineEndingTarget::Windows;
 
     let analysis = analyze_file(&file_with_trailing, &config);
-    let analyses = vec![analysis];
-    let result = rewrite_files(&config, &analyses);
+    let file_list = vec![analysis];
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "Conversion should succeed");
 
     // Verify trailing newline is preserved
@@ -720,8 +720,8 @@ fn test_no_trailing_newline_preserved_on_conversion() {
     config.line_ending_target = LineEndingTarget::Windows;
 
     let analysis = analyze_file(&file_no_trailing, &config);
-    let analyses = vec![analysis];
-    let result = rewrite_files(&config, &analyses);
+    let file_list = vec![analysis];
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "Conversion should succeed");
 
     // Verify no trailing newline is added
@@ -816,7 +816,7 @@ fn test_glob_pattern_matching() {
 
     assert!(!paths.is_empty(), "Should match at least one file");
     assert!(
-        paths.iter().all(|p| p.ends_with(".txt")),
+        paths.iter().all(|p| std::path::Path::new(p).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("txt"))),
         "All matched files should end with .txt"
     );
 }
@@ -900,13 +900,13 @@ fn test_multiple_files_processed_correctly() {
     let linux_file = temp_dir.path().join("test_linux.txt");
     let mixed_file = temp_dir.path().join("test_lines.txt");
 
-    let analyses = vec![
+    let file_list = vec![
         analyze_file(&windows_file, &config),
         analyze_file(&linux_file, &config),
         analyze_file(&mixed_file, &config),
     ];
 
-    let result = rewrite_files(&config, &analyses);
+    let result = rewrite_files(&config, &file_list);
     assert!(result.is_ok(), "Should process multiple files successfully");
 
     // Verify all files now have LF only

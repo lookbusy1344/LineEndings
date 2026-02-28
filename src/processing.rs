@@ -134,13 +134,12 @@ fn create_backup_if_needed(input_path: &Path) -> io::Result<()> {
 /// Handles extensionless files (e.g. `Makefile` → `Makefile.bak`) and
 /// dotfiles (e.g. `.gitignore` → `.gitignore.bak`).
 fn get_backup_path(input_path: &Path) -> std::path::PathBuf {
-    match input_path.extension() {
-        Some(ext) => input_path.with_extension(format!("{}.bak", ext.to_string_lossy())),
-        None => {
-            let mut name = input_path.as_os_str().to_owned();
-            name.push(".bak");
-            std::path::PathBuf::from(name)
-        }
+    if let Some(ext) = input_path.extension() {
+        input_path.with_extension(format!("{}.bak", ext.to_string_lossy()))
+    } else {
+        let mut name = input_path.as_os_str().to_owned();
+        name.push(".bak");
+        std::path::PathBuf::from(name)
     }
 }
 
@@ -272,8 +271,8 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
 /// Processes a single file for BOM removal
 #[must_use]
 pub fn process_file_for_bom_removal(result: &FileAnalysis) -> BomRemovalResult {
-    // Skip files without BOMs or with errors
-    if result.error.is_some() || !result.has_bom() {
+    // Skip binary files, files without BOMs, or files with errors
+    if result.is_binary || result.error.is_some() || !result.has_bom() {
         return BomRemovalResult {
             path: result.path.clone(),
             removed: false,

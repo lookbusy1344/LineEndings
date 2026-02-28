@@ -3,9 +3,33 @@ mod tests {
     use crate::types::{BomType, FileAnalysis};
     use std::path::PathBuf;
 
-    /// Test the has_bom() method with different BomType variants
+    #[test]
+    fn test_binary_file_analysis_has_is_binary_flag() {
+        let binary = FileAnalysis {
+            path: PathBuf::from("image.png"),
+            lf_count: 0,
+            crlf_count: 0,
+            bom_type: None,
+            is_binary: true,
+            error: None,
+        };
+        assert!(binary.is_binary, "binary file should have is_binary = true");
+
+        let text = FileAnalysis {
+            path: PathBuf::from("readme.txt"),
+            lf_count: 10,
+            crlf_count: 0,
+            bom_type: None,
+            is_binary: false,
+            error: None,
+        };
+        assert!(!text.is_binary, "text file should have is_binary = false");
+    }
+
+    /// Test the `has_bom()` method with different `BomType` variants
     /// This test ensures the bug fix for unsafe unwrap operation works correctly
     #[test]
+    #[allow(clippy::similar_names)] // BOM variant names are intentionally similar
     fn test_has_bom_method_with_different_bom_types() {
         // Test with BomType::None - should return false
         let analysis_none = FileAnalysis {
@@ -13,6 +37,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::None),
+            is_binary: false,
             error: None,
         };
         assert!(
@@ -26,6 +51,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::Utf8),
+            is_binary: false,
             error: None,
         };
         assert!(analysis_utf8.has_bom(), "BomType::Utf8 should return true");
@@ -36,6 +62,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::Utf16Le),
+            is_binary: false,
             error: None,
         };
         assert!(
@@ -49,6 +76,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::Utf16Be),
+            is_binary: false,
             error: None,
         };
         assert!(
@@ -62,6 +90,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::Utf32Le),
+            is_binary: false,
             error: None,
         };
         assert!(
@@ -75,6 +104,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::Utf32Be),
+            is_binary: false,
             error: None,
         };
         assert!(
@@ -88,6 +118,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: None,
+            is_binary: false,
             error: None,
         };
         assert!(
@@ -108,7 +139,7 @@ mod tests {
         assert_eq!(BomType::Utf32Be.to_string(), "UTF-32 BE");
     }
 
-    /// Test edge case scenarios for has_bom method
+    /// Test edge case scenarios for `has_bom` method
     #[test]
     fn test_has_bom_edge_cases() {
         // Edge case: Multiple calls should be consistent
@@ -117,6 +148,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::Utf8),
+            is_binary: false,
             error: None,
         };
 
@@ -131,6 +163,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::None),
+            is_binary: false,
             error: None,
         };
 
@@ -152,6 +185,7 @@ mod tests {
             lf_count: 0,
             crlf_count: 0,
             bom_type: Some(BomType::None), // This is Some, but contains BomType::None
+            is_binary: false,
             error: None,
         };
 

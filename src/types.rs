@@ -67,6 +67,7 @@ pub struct FileAnalysis {
     pub lf_count: usize,
     pub crlf_count: usize,
     pub bom_type: Option<BomType>,
+    pub is_binary: bool,
     pub error: Option<String>,
 }
 

@@ -28,7 +28,8 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                 lf_count: 0,
                 crlf_count: 0,
                 bom_type: None,
-                error: Some("Binary file detected, skipping".to_string()),
+                is_binary: true,
+                error: None,
             };
         }
         Err(e) => {
@@ -37,6 +38,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                 lf_count: 0,
                 crlf_count: 0,
                 bom_type: None,
+                is_binary: false,
                 error: Some(format!("Failed to check file type: {e}")),
             };
         }
@@ -53,6 +55,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                     lf_count: 0,
                     crlf_count: 0,
                     bom_type: None,
+                    is_binary: false,
                     error: Some(format!("Failed to detect BOM: {e}")),
                 };
             }
@@ -69,6 +72,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
             lf_count,
             crlf_count,
             bom_type,
+            is_binary: false,
             error: None,
         },
         Err(e) => FileAnalysis {
@@ -76,6 +80,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
             lf_count: 0,
             crlf_count: 0,
             bom_type,
+            is_binary: false,
             error: Some(e.to_string()),
         },
     }

@@ -117,14 +117,12 @@ fn main() -> Result<()> {
     let mut mixed_files = 0usize;
 
     for result in &results {
-        if let Some(error) = &result.error {
+        if result.is_binary {
+            binary_files += 1;
+        } else if let Some(error) = &result.error {
             let filename = result.path.display();
-            if error.contains("Binary file detected") {
-                binary_files += 1;
-            } else {
-                println!("\nFile: {filename}\terror: {error}");
-                has_errors += 1;
-            }
+            println!("\nFile: {filename}\terror: {error}");
+            has_errors += 1;
         } else {
             print_file_analysis(result);
 
