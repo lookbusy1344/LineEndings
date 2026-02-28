@@ -861,6 +861,71 @@ fn test_non_matching_glob_pattern() {
 }
 
 // ============================================================================
+// Error Propagation Tests
+// ============================================================================
+
+#[test]
+fn test_rewrite_files_error_message_names_failing_file() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Windows;
+
+    // File that will fail: deleted after analysis so backup creation fails
+    let missing_file = temp_dir.path().join("missing.txt");
+    fs::write(&missing_file, b"Line 1\nLine 2\n").expect("Failed to write file");
+
+    // File that should succeed (already CRLF so no rewrite needed — but has mixed endings)
+    let writable_file = temp_dir.path().join("writable.txt");
+    fs::write(&writable_file, b"Line 1\r\nLine 2\n").expect("Failed to write file");
+
+    let file_list = vec![
+        analyze_file(&missing_file, &config),
+        analyze_file(&writable_file, &config),
+    ];
+
+    // Delete the first file after analysis so rewrite_file_with_line_ending fails
+    fs::remove_file(&missing_file).expect("Should delete file");
+
+    let result = rewrite_files(&config, &file_list);
+    assert!(result.is_err(), "Should return error for missing file");
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("missing"),
+        "Error should identify the failing file, got: {error_msg}"
+    );
+}
+
+/// All errors should be collected and reported together, not just the first one
+#[test]
+fn test_rewrite_files_collects_all_errors() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Windows;
+
+    let file1 = temp_dir.path().join("alpha.txt");
+    let file2 = temp_dir.path().join("beta.txt");
+    fs::write(&file1, b"Line 1\nLine 2\n").expect("Failed to write file1");
+    fs::write(&file2, b"Line 1\nLine 2\n").expect("Failed to write file2");
+
+    let file_list = vec![
+        analyze_file(&file1, &config),
+        analyze_file(&file2, &config),
+    ];
+
+    // Delete both files so both rewrites fail
+    fs::remove_file(&file1).expect("Should delete file1");
+    fs::remove_file(&file2).expect("Should delete file2");
+
+    let result = rewrite_files(&config, &file_list);
+    assert!(result.is_err(), "Should return error");
+    let error_msg = result.unwrap_err().to_string();
+    assert!(
+        error_msg.contains("alpha") && error_msg.contains("beta"),
+        "Error should report all failing files, got: {error_msg}"
+    );
+}
+
+// ============================================================================
 // Multiple File Processing Tests
 // ============================================================================
 

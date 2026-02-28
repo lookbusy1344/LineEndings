@@ -43,17 +43,16 @@ pub fn rewrite_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Resul
     // Process results sequentially for consistent output and counting
     let mut rewritten_files = 0usize;
     let mut skipped_files = 0usize;
+    let mut errors: Vec<String> = Vec::new();
 
     for rewrite_result in &rewrite_results {
         if let Some(error) = &rewrite_result.error {
-            return Err(anyhow::anyhow!(
+            errors.push(format!(
                 "Failed to rewrite file: {}: {}",
                 rewrite_result.path.display(),
                 error
             ));
-        }
-
-        if rewrite_result.rewritten {
+        } else if rewrite_result.rewritten {
             println!("\"{}\"\trewritten", rewrite_result.path.display());
             rewritten_files += 1;
         } else {
@@ -72,7 +71,11 @@ pub fn rewrite_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Resul
         skipped_files
     );
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("{}", errors.join("\n")))
+    }
 }
 
 /// Processes a single file for rewriting based on configuration and line ending analysis
@@ -240,17 +243,16 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
     // Process results sequentially for consistent output and counting
     let mut bom_removed = 0usize;
     let mut files_skipped = 0usize;
+    let mut errors: Vec<String> = Vec::new();
 
     for removal_result in &removal_results {
         if let Some(error) = &removal_result.error {
-            return Err(anyhow::anyhow!(
+            errors.push(format!(
                 "Failed to remove BOM from {}: {}",
                 removal_result.path.display(),
                 error
             ));
-        }
-
-        if removal_result.removed {
+        } else if removal_result.removed {
             if let Some(bom_type) = removal_result.bom_type {
                 println!(
                     "\"{}\"\tBOM removed: {bom_type}",
@@ -265,7 +267,11 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
 
     println!("BOM removed from {bom_removed} file(s), skipped {files_skipped}");
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("{}", errors.join("\n")))
+    }
 }
 
 /// Processes a single file for BOM removal
