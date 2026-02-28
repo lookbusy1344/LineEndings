@@ -60,12 +60,12 @@ fn test_bom_detection() {
 
     // Test UTF-8 BOM detection
     let bom_type = detect_bom(&has_bom_path).expect("Failed to detect BOM");
-    assert_eq!(bom_type, BomType::Utf8);
+    assert_eq!(bom_type, Some(BomType::Utf8));
 
     // Test file without BOM
     let no_bom_path = temp_dir.path().join("test_linux.txt");
     let bom_type = detect_bom(&no_bom_path).expect("Failed to detect BOM");
-    assert_eq!(bom_type, BomType::None);
+    assert_eq!(bom_type, None);
 }
 
 #[test]
@@ -247,8 +247,7 @@ fn test_bom_removal() {
     let converted_analysis = analyze_file(&has_bom_path, &config);
     assert!(!converted_analysis.has_bom(), "BOM should be removed");
     assert_eq!(
-        converted_analysis.bom_type,
-        Some(BomType::None),
+        converted_analysis.bom_type, None,
         "BOM type should be None after removal"
     );
 }
@@ -410,17 +409,16 @@ fn test_bom_output_when_requested() {
         "Should detect UTF-8 BOM"
     );
 
-    // Test file without BOM - should show "BOM: none" when requested
+    // Test file without BOM — bom_checked is true, bom_type is None
     let no_bom_path = temp_dir.path().join("test_linux.txt");
     let analysis = analyze_file(&no_bom_path, &config);
     assert!(
-        analysis.bom_type.is_some(),
-        "BOM type should be set when check_bom is true"
+        analysis.bom_checked,
+        "bom_checked should be true when check_bom is requested"
     );
     assert_eq!(
-        analysis.bom_type,
-        Some(BomType::None),
-        "Should detect no BOM"
+        analysis.bom_type, None,
+        "bom_type should be None when no BOM is present"
     );
 }
 
@@ -457,45 +455,20 @@ fn test_bom_status_format_strings() {
     let temp_dir = setup_test_environment();
 
     // Test BOM type string formats match expected output
-    assert_eq!(
-        BomType::None.to_string(),
-        "none",
-        "BomType::None should display as 'none'"
-    );
-    assert_eq!(
-        BomType::Utf8.to_string(),
-        "UTF-8",
-        "BomType::Utf8 should display as 'UTF-8'"
-    );
-    assert_eq!(
-        BomType::Utf16Le.to_string(),
-        "UTF-16 LE",
-        "BomType::Utf16Le should display as 'UTF-16 LE'"
-    );
-    assert_eq!(
-        BomType::Utf16Be.to_string(),
-        "UTF-16 BE",
-        "BomType::Utf16Be should display as 'UTF-16 BE'"
-    );
-    assert_eq!(
-        BomType::Utf32Le.to_string(),
-        "UTF-32 LE",
-        "BomType::Utf32Le should display as 'UTF-32 LE'"
-    );
-    assert_eq!(
-        BomType::Utf32Be.to_string(),
-        "UTF-32 BE",
-        "BomType::Utf32Be should display as 'UTF-32 BE'"
-    );
+    assert_eq!(BomType::Utf8.to_string(), "UTF-8");
+    assert_eq!(BomType::Utf16Le.to_string(), "UTF-16 LE");
+    assert_eq!(BomType::Utf16Be.to_string(), "UTF-16 BE");
+    assert_eq!(BomType::Utf32Le.to_string(), "UTF-32 LE");
+    assert_eq!(BomType::Utf32Be.to_string(), "UTF-32 BE");
 
-    // Test actual BOM detection
+    // Test actual BOM detection — returns Option<BomType>
     let has_bom_path = temp_dir.path().join("has_bom.txt");
     let bom_type = detect_bom(&has_bom_path).expect("Should detect BOM");
-    assert_eq!(bom_type, BomType::Utf8, "Should detect UTF-8 BOM");
+    assert_eq!(bom_type, Some(BomType::Utf8), "Should detect UTF-8 BOM");
 
     let no_bom_path = temp_dir.path().join("test_linux.txt");
     let bom_type = detect_bom(&no_bom_path).expect("Should detect no BOM");
-    assert_eq!(bom_type, BomType::None, "Should detect no BOM");
+    assert_eq!(bom_type, None, "Should detect no BOM");
 }
 
 // ============================================================================
@@ -816,7 +789,9 @@ fn test_glob_pattern_matching() {
 
     assert!(!paths.is_empty(), "Should match at least one file");
     assert!(
-        paths.iter().all(|p| std::path::Path::new(p).extension().is_some_and(|ext| ext.eq_ignore_ascii_case("txt"))),
+        paths.iter().all(|p| std::path::Path::new(p)
+            .extension()
+            .is_some_and(|ext| ext.eq_ignore_ascii_case("txt"))),
         "All matched files should end with .txt"
     );
 }

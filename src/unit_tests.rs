@@ -4,11 +4,72 @@ mod tests {
     use std::path::PathBuf;
 
     #[test]
+    fn test_bom_checked_flag_distinguishes_not_checked_from_no_bom() {
+        // bom_checked = false means the check was not requested
+        let not_checked = FileAnalysis {
+            path: PathBuf::from("test.txt"),
+            lf_count: 5,
+            crlf_count: 0,
+            bom_type: None,
+            bom_checked: false,
+            is_binary: false,
+            error: None,
+        };
+        assert!(
+            !not_checked.bom_checked,
+            "bom_checked should be false when not requested"
+        );
+        assert!(
+            !not_checked.has_bom(),
+            "has_bom() should be false when check not requested"
+        );
+
+        // bom_checked = true, bom_type = None means checked, no BOM found
+        let checked_no_bom = FileAnalysis {
+            path: PathBuf::from("test.txt"),
+            lf_count: 5,
+            crlf_count: 0,
+            bom_type: None,
+            bom_checked: true,
+            is_binary: false,
+            error: None,
+        };
+        assert!(
+            checked_no_bom.bom_checked,
+            "bom_checked should be true when check ran"
+        );
+        assert!(
+            !checked_no_bom.has_bom(),
+            "has_bom() should be false when no BOM found"
+        );
+
+        // bom_checked = true, bom_type = Some means BOM found
+        let checked_with_bom = FileAnalysis {
+            path: PathBuf::from("test.txt"),
+            lf_count: 5,
+            crlf_count: 0,
+            bom_type: Some(BomType::Utf8),
+            bom_checked: true,
+            is_binary: false,
+            error: None,
+        };
+        assert!(
+            checked_with_bom.bom_checked,
+            "bom_checked should be true when check ran"
+        );
+        assert!(
+            checked_with_bom.has_bom(),
+            "has_bom() should be true when BOM found"
+        );
+    }
+
+    #[test]
     fn test_binary_file_analysis_has_is_binary_flag() {
         let binary = FileAnalysis {
             path: PathBuf::from("image.png"),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: false,
             bom_type: None,
             is_binary: true,
             error: None,
@@ -19,6 +80,7 @@ mod tests {
             path: PathBuf::from("readme.txt"),
             lf_count: 10,
             crlf_count: 0,
+            bom_checked: false,
             bom_type: None,
             is_binary: false,
             error: None,
@@ -31,36 +93,48 @@ mod tests {
     #[test]
     #[allow(clippy::similar_names)] // BOM variant names are intentionally similar
     fn test_has_bom_method_with_different_bom_types() {
-        // Test with BomType::None - should return false
-        let analysis_none = FileAnalysis {
+        // No BOM found (check ran, nothing found) — bom_type: None
+        let no_bom = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
-            bom_type: Some(BomType::None),
+            bom_checked: true,
+            bom_type: None,
             is_binary: false,
             error: None,
         };
-        assert!(
-            !analysis_none.has_bom(),
-            "BomType::None should return false"
-        );
+        assert!(!no_bom.has_bom(), "no BOM found should return false");
 
-        // Test with BomType::Utf8 - should return true
+        // BOM check not requested — bom_type: None, bom_checked: false
+        let not_checked = FileAnalysis {
+            path: PathBuf::from("test.txt"),
+            lf_count: 0,
+            crlf_count: 0,
+            bom_checked: false,
+            bom_type: None,
+            is_binary: false,
+            error: None,
+        };
+        assert!(!not_checked.has_bom(), "unchecked file should return false");
+
+        // UTF-8 BOM
         let analysis_utf8 = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: true,
             bom_type: Some(BomType::Utf8),
             is_binary: false,
             error: None,
         };
         assert!(analysis_utf8.has_bom(), "BomType::Utf8 should return true");
 
-        // Test with BomType::Utf16Le - should return true
+        // UTF-16 LE BOM
         let analysis_utf16_le = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: true,
             bom_type: Some(BomType::Utf16Le),
             is_binary: false,
             error: None,
@@ -70,11 +144,12 @@ mod tests {
             "BomType::Utf16Le should return true"
         );
 
-        // Test with BomType::Utf16Be - should return true
+        // UTF-16 BE BOM
         let analysis_utf16_be = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: true,
             bom_type: Some(BomType::Utf16Be),
             is_binary: false,
             error: None,
@@ -84,11 +159,12 @@ mod tests {
             "BomType::Utf16Be should return true"
         );
 
-        // Test with BomType::Utf32Le - should return true
+        // UTF-32 LE BOM
         let analysis_utf32_le = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: true,
             bom_type: Some(BomType::Utf32Le),
             is_binary: false,
             error: None,
@@ -98,11 +174,12 @@ mod tests {
             "BomType::Utf32Le should return true"
         );
 
-        // Test with BomType::Utf32Be - should return true
+        // UTF-32 BE BOM
         let analysis_utf32_be = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: true,
             bom_type: Some(BomType::Utf32Be),
             is_binary: false,
             error: None,
@@ -111,27 +188,11 @@ mod tests {
             analysis_utf32_be.has_bom(),
             "BomType::Utf32Be should return true"
         );
-
-        // Test with None bom_type - should return false
-        let analysis_no_bom_check = FileAnalysis {
-            path: PathBuf::from("test.txt"),
-            lf_count: 0,
-            crlf_count: 0,
-            bom_type: None,
-            is_binary: false,
-            error: None,
-        };
-        assert!(
-            !analysis_no_bom_check.has_bom(),
-            "None bom_type should return false"
-        );
     }
 
     /// Test BOM type string conversion
-    /// This ensures the BOM info display logic generates correct static strings
     #[test]
     fn test_bom_type_to_string() {
-        assert_eq!(BomType::None.to_string(), "none");
         assert_eq!(BomType::Utf8.to_string(), "UTF-8");
         assert_eq!(BomType::Utf16Le.to_string(), "UTF-16 LE");
         assert_eq!(BomType::Utf16Be.to_string(), "UTF-16 BE");
@@ -139,60 +200,31 @@ mod tests {
         assert_eq!(BomType::Utf32Be.to_string(), "UTF-32 BE");
     }
 
-    /// Test edge case scenarios for `has_bom` method
+    /// Test edge case scenarios for `has_bom` method — idempotency
     #[test]
-    fn test_has_bom_edge_cases() {
-        // Edge case: Multiple calls should be consistent
-        let analysis = FileAnalysis {
+    fn test_has_bom_is_idempotent() {
+        let with_bom = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: true,
             bom_type: Some(BomType::Utf8),
             is_binary: false,
             error: None,
         };
+        assert!(with_bom.has_bom());
+        assert!(with_bom.has_bom());
 
-        // Multiple calls should return the same result
-        assert!(analysis.has_bom());
-        assert!(analysis.has_bom());
-        assert!(analysis.has_bom());
-
-        // Test with BomType::None multiple times
-        let analysis_none = FileAnalysis {
+        let without_bom = FileAnalysis {
             path: PathBuf::from("test.txt"),
             lf_count: 0,
             crlf_count: 0,
-            bom_type: Some(BomType::None),
+            bom_checked: true,
+            bom_type: None,
             is_binary: false,
             error: None,
         };
-
-        assert!(!analysis_none.has_bom());
-        assert!(!analysis_none.has_bom());
-        assert!(!analysis_none.has_bom());
-    }
-
-    /// Test that the original unsafe scenario would have been handled correctly
-    /// This is a regression test for the original bug
-    #[test]
-    fn test_original_bug_scenario() {
-        // The original bug was: self.bom_type.is_some() && self.bom_type.unwrap() != BomType::None
-        // This would panic if bom_type was Some(BomType::None) due to the unsafe unwrap
-
-        // Scenario that would have caused the original bug:
-        let analysis_that_would_panic = FileAnalysis {
-            path: PathBuf::from("test.txt"),
-            lf_count: 0,
-            crlf_count: 0,
-            bom_type: Some(BomType::None), // This is Some, but contains BomType::None
-            is_binary: false,
-            error: None,
-        };
-
-        // With the fixed implementation using matches!, this should return false safely
-        assert!(
-            !analysis_that_would_panic.has_bom(),
-            "Fixed implementation should safely handle Some(BomType::None)"
-        );
+        assert!(!without_bom.has_bom());
+        assert!(!without_bom.has_bom());
     }
 }

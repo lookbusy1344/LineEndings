@@ -293,20 +293,10 @@ pub fn process_file_for_bom_removal(result: &FileAnalysis) -> BomRemovalResult {
 
     // Get the size of the BOM to skip
     let bom_size = match bom_type {
-        BomType::None => 0,
         BomType::Utf8 => 3,
         BomType::Utf16Le | BomType::Utf16Be => 2,
         BomType::Utf32Le | BomType::Utf32Be => 4,
     };
-
-    if bom_size == 0 {
-        return BomRemovalResult {
-            path: result.path.clone(),
-            removed: false,
-            bom_type: Some(bom_type),
-            error: None,
-        };
-    }
 
     // Process the file to remove the BOM
     match remove_bom_from_file(&result.path, bom_size) {
@@ -421,8 +411,11 @@ mod tests {
     fn test_backup_path_for_extensionless_file() {
         let path = std::path::Path::new("Makefile");
         let backup = get_backup_path(path);
-        assert_eq!(backup, std::path::Path::new("Makefile.bak"),
-            "extensionless file should get .bak suffix, not ..bak");
+        assert_eq!(
+            backup,
+            std::path::Path::new("Makefile.bak"),
+            "extensionless file should get .bak suffix, not ..bak"
+        );
     }
 
     #[test]

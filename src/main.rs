@@ -32,9 +32,13 @@ fn print_file_analysis(result: &FileAnalysis) {
         format!("Mixed LF {}, CRLF {}", result.lf_count, result.crlf_count)
     };
 
-    let bom_info = match &result.bom_type {
-        None => String::new(), // no BOM check requested
-        Some(bom) => format!(", BOM: {bom}"),
+    let bom_info = if result.bom_checked {
+        match &result.bom_type {
+            None => String::from(", BOM: none"),
+            Some(bom) => format!(", BOM: {bom}"),
+        }
+    } else {
+        String::new()
     };
 
     println!("\"{file_name}\"\t{line_endings}{bom_info}");

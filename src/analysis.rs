@@ -27,6 +27,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                 path: path.as_ref().to_path_buf(),
                 lf_count: 0,
                 crlf_count: 0,
+                bom_checked: false,
                 bom_type: None,
                 is_binary: true,
                 error: None,
@@ -37,6 +38,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                 path: path.as_ref().to_path_buf(),
                 lf_count: 0,
                 crlf_count: 0,
+                bom_checked: false,
                 bom_type: None,
                 is_binary: false,
                 error: Some(format!("Failed to check file type: {e}")),
@@ -48,12 +50,13 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
     // Only detect BOM if check_bom is true
     let bom_type: Option<BomType> = if config.check_bom {
         match detect_bom(&path) {
-            Ok(bom) => Some(bom),
+            Ok(bom) => bom,
             Err(e) => {
                 return FileAnalysis {
                     path: path.as_ref().to_path_buf(),
                     lf_count: 0,
                     crlf_count: 0,
+                    bom_checked: false,
                     bom_type: None,
                     is_binary: false,
                     error: Some(format!("Failed to detect BOM: {e}")),
@@ -61,7 +64,6 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
             }
         }
     } else {
-        // Skip BOM detection
         None
     };
 
@@ -71,6 +73,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
             path: path.as_ref().to_path_buf(),
             lf_count,
             crlf_count,
+            bom_checked: config.check_bom,
             bom_type,
             is_binary: false,
             error: None,
@@ -79,6 +82,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
             path: path.as_ref().to_path_buf(),
             lf_count: 0,
             crlf_count: 0,
+            bom_checked: config.check_bom,
             bom_type,
             is_binary: false,
             error: Some(e.to_string()),
@@ -134,12 +138,13 @@ pub fn count_line_endings<R: Read>(mut reader: BufReader<R>) -> Result<(usize, u
     Ok((lf_count, crlf_count))
 }
 
-/// Detects BOM (Byte Order Marker) in a file
+/// Detects BOM (Byte Order Marker) in a file.
+/// Returns `Ok(Some(bom_type))` if a BOM was found, `Ok(None)` if no BOM was found.
 ///
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened or read.
-pub fn detect_bom(file_path: impl AsRef<Path>) -> Result<BomType> {
+pub fn detect_bom(file_path: impl AsRef<Path>) -> Result<Option<BomType>> {
     let mut file = File::open(file_path)?;
     let mut buffer = [0; 4]; // Maximum BOM size is 4 bytes (UTF-32)
 
@@ -148,18 +153,18 @@ pub fn detect_bom(file_path: impl AsRef<Path>) -> Result<BomType> {
 
     // Check longer BOMs first to avoid false matches (UTF-32 LE starts with UTF-16 LE bytes)
     if bytes_read >= 4 && buffer[0..4] == UTF32_LE_BOM[..] {
-        return Ok(BomType::Utf32Le);
+        return Ok(Some(BomType::Utf32Le));
     } else if bytes_read >= 4 && buffer[0..4] == UTF32_BE_BOM[..] {
-        return Ok(BomType::Utf32Be);
+        return Ok(Some(BomType::Utf32Be));
     } else if bytes_read >= 3 && buffer[0..3] == UTF8_BOM[..] {
-        return Ok(BomType::Utf8);
+        return Ok(Some(BomType::Utf8));
     } else if bytes_read >= 2 && buffer[0..2] == UTF16_LE_BOM[..] {
-        return Ok(BomType::Utf16Le);
+        return Ok(Some(BomType::Utf16Le));
     } else if bytes_read >= 2 && buffer[0..2] == UTF16_BE_BOM[..] {
-        return Ok(BomType::Utf16Be);
+        return Ok(Some(BomType::Utf16Be));
     }
 
-    Ok(BomType::None)
+    Ok(None)
 }
 
 /// Detects if a file is binary by checking for null bytes and non-printable characters
