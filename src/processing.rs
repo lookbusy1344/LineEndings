@@ -129,15 +129,19 @@ fn create_backup_if_needed(input_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Gets the backup path for a given file
+/// Gets the backup path for a given file.
+/// Appends `.bak` to the full filename, preserving the original extension.
+/// Handles extensionless files (e.g. `Makefile` → `Makefile.bak`) and
+/// dotfiles (e.g. `.gitignore` → `.gitignore.bak`).
 fn get_backup_path(input_path: &Path) -> std::path::PathBuf {
-    input_path.with_extension(format!(
-        "{}.bak",
-        input_path
-            .extension()
-            .map(|ext| ext.to_string_lossy().to_string())
-            .unwrap_or_default()
-    ))
+    match input_path.extension() {
+        Some(ext) => input_path.with_extension(format!("{}.bak", ext.to_string_lossy())),
+        None => {
+            let mut name = input_path.as_os_str().to_owned();
+            name.push(".bak");
+            std::path::PathBuf::from(name)
+        }
+    }
 }
 
 /// Rewrites a file with specified line endings.
@@ -401,4 +405,31 @@ pub fn delete_backup_files(results: &[FileAnalysis]) -> Result<()> {
     println!("Moved {deleted_count} backup file(s) to trash, {not_found_count} not found");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backup_path_for_file_with_extension() {
+        let path = std::path::Path::new("test.txt");
+        let backup = get_backup_path(path);
+        assert_eq!(backup, std::path::Path::new("test.txt.bak"));
+    }
+
+    #[test]
+    fn test_backup_path_for_extensionless_file() {
+        let path = std::path::Path::new("Makefile");
+        let backup = get_backup_path(path);
+        assert_eq!(backup, std::path::Path::new("Makefile.bak"),
+            "extensionless file should get .bak suffix, not ..bak");
+    }
+
+    #[test]
+    fn test_backup_path_for_dotfile() {
+        let path = std::path::Path::new(".gitignore");
+        let backup = get_backup_path(path);
+        assert_eq!(backup, std::path::Path::new(".gitignore.bak"));
+    }
 }
