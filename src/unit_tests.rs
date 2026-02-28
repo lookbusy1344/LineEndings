@@ -108,30 +108,6 @@ mod tests {
         assert_eq!(BomType::Utf32Be.to_string(), "UTF-32 BE");
     }
 
-    /// Test that the BOM string literals are static (no allocations)
-    /// This verifies the performance improvement for BOM info display
-    #[test]
-    fn test_bom_strings_are_static() {
-        // These should all be static string literals, not allocated strings
-        let none_str = BomType::None.to_string();
-        let utf8_str = BomType::Utf8.to_string();
-        let utf16_le_str = BomType::Utf16Le.to_string();
-        let utf16_be_str = BomType::Utf16Be.to_string();
-        let utf32_le_str = BomType::Utf32Le.to_string();
-        let utf32_be_str = BomType::Utf32Be.to_string();
-
-        // Verify they are the expected values
-        assert_eq!(none_str, "none");
-        assert_eq!(utf8_str, "UTF-8");
-        assert_eq!(utf16_le_str, "UTF-16 LE");
-        assert_eq!(utf16_be_str, "UTF-16 BE");
-        assert_eq!(utf32_le_str, "UTF-32 LE");
-        assert_eq!(utf32_be_str, "UTF-32 BE");
-
-        // The fact that these compile and run correctly verifies they are static literals
-        // If they were allocated strings, the performance would be worse
-    }
-
     /// Test edge case scenarios for has_bom method
     #[test]
     fn test_has_bom_edge_cases() {
