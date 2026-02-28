@@ -1,9 +1,10 @@
 use std::path::PathBuf;
 
-/// Represents the type of BOM detected in a file
+/// Represents the type of BOM detected in a file.
+/// Note: `Option<BomType>` in `FileAnalysis::bom_type` uses `None` to mean "no BOM found".
+/// Use `FileAnalysis::bom_checked` to distinguish "no BOM found" from "check not requested".
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum BomType {
-    None,
     Utf8,
     Utf16Le,
     Utf16Be,
@@ -14,7 +15,6 @@ pub enum BomType {
 impl std::fmt::Display for BomType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            BomType::None => write!(f, "none"),
             BomType::Utf8 => write!(f, "UTF-8"),
             BomType::Utf16Le => write!(f, "UTF-16 LE"),
             BomType::Utf16Be => write!(f, "UTF-16 BE"),
@@ -66,7 +66,13 @@ pub struct FileAnalysis {
     pub path: PathBuf,
     pub lf_count: usize,
     pub crlf_count: usize,
+    /// `true` if the BOM check was requested (--bom or --remove-bom flags).
+    /// Distinguish "no BOM found" (`bom_checked = true, bom_type = None`) from
+    /// "check not requested" (`bom_checked = false`).
+    pub bom_checked: bool,
+    /// The BOM type found, or `None` if no BOM was found (only valid when `bom_checked = true`).
     pub bom_type: Option<BomType>,
+    pub is_binary: bool,
     pub error: Option<String>,
 }
 
@@ -89,10 +95,10 @@ impl FileAnalysis {
         self.lf_count == 0 && self.crlf_count > 0
     }
 
-    /// Returns true if the file has a BOM
+    /// Returns true if the BOM check ran and a BOM was found
     #[must_use]
     pub fn has_bom(&self) -> bool {
-        matches!(self.bom_type, Some(bom_type) if bom_type != BomType::None)
+        self.bom_type.is_some()
     }
 }
 

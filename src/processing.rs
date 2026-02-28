@@ -43,17 +43,16 @@ pub fn rewrite_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Resul
     // Process results sequentially for consistent output and counting
     let mut rewritten_files = 0usize;
     let mut skipped_files = 0usize;
+    let mut errors: Vec<String> = Vec::new();
 
     for rewrite_result in &rewrite_results {
         if let Some(error) = &rewrite_result.error {
-            return Err(anyhow::anyhow!(
+            errors.push(format!(
                 "Failed to rewrite file: {}: {}",
                 rewrite_result.path.display(),
                 error
             ));
-        }
-
-        if rewrite_result.rewritten {
+        } else if rewrite_result.rewritten {
             println!("\"{}\"\trewritten", rewrite_result.path.display());
             rewritten_files += 1;
         } else {
@@ -72,7 +71,11 @@ pub fn rewrite_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Resul
         skipped_files
     );
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("{}", errors.join("\n")))
+    }
 }
 
 /// Processes a single file for rewriting based on configuration and line ending analysis
@@ -129,15 +132,18 @@ fn create_backup_if_needed(input_path: &Path) -> io::Result<()> {
     Ok(())
 }
 
-/// Gets the backup path for a given file
+/// Gets the backup path for a given file.
+/// Appends `.bak` to the full filename, preserving the original extension.
+/// Handles extensionless files (e.g. `Makefile` → `Makefile.bak`) and
+/// dotfiles (e.g. `.gitignore` → `.gitignore.bak`).
 fn get_backup_path(input_path: &Path) -> std::path::PathBuf {
-    input_path.with_extension(format!(
-        "{}.bak",
-        input_path
-            .extension()
-            .map(|ext| ext.to_string_lossy().to_string())
-            .unwrap_or_default()
-    ))
+    if let Some(ext) = input_path.extension() {
+        input_path.with_extension(format!("{}.bak", ext.to_string_lossy()))
+    } else {
+        let mut name = input_path.as_os_str().to_owned();
+        name.push(".bak");
+        std::path::PathBuf::from(name)
+    }
 }
 
 /// Rewrites a file with specified line endings.
@@ -237,17 +243,16 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
     // Process results sequentially for consistent output and counting
     let mut bom_removed = 0usize;
     let mut files_skipped = 0usize;
+    let mut errors: Vec<String> = Vec::new();
 
     for removal_result in &removal_results {
         if let Some(error) = &removal_result.error {
-            return Err(anyhow::anyhow!(
+            errors.push(format!(
                 "Failed to remove BOM from {}: {}",
                 removal_result.path.display(),
                 error
             ));
-        }
-
-        if removal_result.removed {
+        } else if removal_result.removed {
             if let Some(bom_type) = removal_result.bom_type {
                 println!(
                     "\"{}\"\tBOM removed: {bom_type}",
@@ -262,14 +267,18 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
 
     println!("BOM removed from {bom_removed} file(s), skipped {files_skipped}");
 
-    Ok(())
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(anyhow::anyhow!("{}", errors.join("\n")))
+    }
 }
 
 /// Processes a single file for BOM removal
 #[must_use]
 pub fn process_file_for_bom_removal(result: &FileAnalysis) -> BomRemovalResult {
-    // Skip files without BOMs or with errors
-    if result.error.is_some() || !result.has_bom() {
+    // Skip binary files, files without BOMs, or files with errors
+    if result.is_binary || result.error.is_some() || !result.has_bom() {
         return BomRemovalResult {
             path: result.path.clone(),
             removed: false,
@@ -290,20 +299,10 @@ pub fn process_file_for_bom_removal(result: &FileAnalysis) -> BomRemovalResult {
 
     // Get the size of the BOM to skip
     let bom_size = match bom_type {
-        BomType::None => 0,
         BomType::Utf8 => 3,
         BomType::Utf16Le | BomType::Utf16Be => 2,
         BomType::Utf32Le | BomType::Utf32Be => 4,
     };
-
-    if bom_size == 0 {
-        return BomRemovalResult {
-            path: result.path.clone(),
-            removed: false,
-            bom_type: Some(bom_type),
-            error: None,
-        };
-    }
 
     // Process the file to remove the BOM
     match remove_bom_from_file(&result.path, bom_size) {
@@ -401,4 +400,34 @@ pub fn delete_backup_files(results: &[FileAnalysis]) -> Result<()> {
     println!("Moved {deleted_count} backup file(s) to trash, {not_found_count} not found");
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_backup_path_for_file_with_extension() {
+        let path = std::path::Path::new("test.txt");
+        let backup = get_backup_path(path);
+        assert_eq!(backup, std::path::Path::new("test.txt.bak"));
+    }
+
+    #[test]
+    fn test_backup_path_for_extensionless_file() {
+        let path = std::path::Path::new("Makefile");
+        let backup = get_backup_path(path);
+        assert_eq!(
+            backup,
+            std::path::Path::new("Makefile.bak"),
+            "extensionless file should get .bak suffix, not ..bak"
+        );
+    }
+
+    #[test]
+    fn test_backup_path_for_dotfile() {
+        let path = std::path::Path::new(".gitignore");
+        let backup = get_backup_path(path);
+        assert_eq!(backup, std::path::Path::new(".gitignore.bak"));
+    }
 }

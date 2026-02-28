@@ -1,6 +1,4 @@
 #![forbid(unsafe_code)]
-// #![allow(unused_imports)]
-// #![allow(unused_variables)]
 
 use anyhow::{Context, Result};
 use pico_args::Arguments;
@@ -34,23 +32,21 @@ fn print_file_analysis(result: &FileAnalysis) {
         format!("Mixed LF {}, CRLF {}", result.lf_count, result.crlf_count)
     };
 
-    let bom_info = match &result.bom_type {
-        None => String::new(), // no BOM check requested
-        Some(bom) => format!(", BOM: {bom}"),
+    let bom_info = if result.bom_checked {
+        match &result.bom_type {
+            None => String::from(", BOM: none"),
+            Some(bom) => format!(", BOM: {bom}"),
+        }
+    } else {
+        String::new()
     };
 
     println!("\"{file_name}\"\t{line_endings}{bom_info}");
 }
 
 fn main() -> Result<()> {
-    // Help debugging in Zed by passing arguments directly
-    // let debug_args: Vec<std::ffi::OsString> = vec!["test*.txt".into()];
-    // let mut p_args = Arguments::from_vec(debug_args);
-
-    // Parse command line arguments
     let mut p_args = Arguments::from_env();
 
-    // special handling of help
     if p_args.contains(["-h", "--help"]) {
         show_help();
         return Ok(());
@@ -125,14 +121,12 @@ fn main() -> Result<()> {
     let mut mixed_files = 0usize;
 
     for result in &results {
-        if let Some(error) = &result.error {
+        if result.is_binary {
+            binary_files += 1;
+        } else if let Some(error) = &result.error {
             let filename = result.path.display();
-            if error.contains("Binary file detected") {
-                binary_files += 1;
-            } else {
-                println!("\nFile: {filename}\terror: {error}");
-                has_errors += 1;
-            }
+            println!("\nFile: {filename}\terror: {error}");
+            has_errors += 1;
         } else {
             print_file_analysis(result);
 
