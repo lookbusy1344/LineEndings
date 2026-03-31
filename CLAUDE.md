@@ -30,7 +30,7 @@ cargo build
 cargo build --release
 cargo clippy --all-targets --all-features -- -D clippy::all -D clippy::pedantic -F unsafe_code
 cargo fmt
-cargo test
+cargo nextest run
 ```
 
 ## Build Configuration
@@ -43,7 +43,7 @@ The project uses Rust 2024 edition with aggressive release optimizations (LTO, s
 cargo build --all-targets
 cargo clippy --all-targets --all-features -- -D clippy::all -D clippy::pedantic -F unsafe_code
 cargo fmt
-cargo test
+cargo nextest run
 ```
 
 **Security:**
