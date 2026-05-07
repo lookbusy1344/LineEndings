@@ -53,10 +53,10 @@ while IFS= read -r -d '' staged_path; do
         should_run=true
         break
     fi
-done < <(git -C "${project_dir}" diff --cached --name-only -z)
+done < <(git -C "${project_dir}" diff HEAD --name-only -z)
 
 if [[ "${should_run}" != true ]]; then
-    echo "==> No staged Rust or Cargo files detected, skipping."
+    echo "==> No modified Rust or Cargo files detected, skipping."
     exit 0
 fi
 
