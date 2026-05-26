@@ -9,6 +9,7 @@ OPTIONS:
     -b, --bom                    Check for Byte Order Mark (BOM) in files
     -r, --recursive              Recursively search subdirectories
     -n, --no-trash               Keep .bak backup files (default: moved to trash after operations)
+    -d, --dry-run                Preview what would change without modifying any files
 
 FIXES:
     -w, --windows-line-endings   Rewrite with Windows line endings (CRLF)

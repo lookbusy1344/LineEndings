@@ -48,6 +48,8 @@ pub struct ConfigSettings {
     pub remove_bom: bool,
     pub recursive: bool,
     pub no_trash: bool,
+    /// Preview mode: report what would be changed without modifying any files.
+    pub dry_run: bool,
     pub supplied_paths: Vec<String>,
     pub folder: Option<String>,
 }

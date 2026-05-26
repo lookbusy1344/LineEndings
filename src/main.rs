@@ -12,6 +12,7 @@ use line_endings::analysis::analyze_file;
 use line_endings::config::parse_args;
 use line_endings::processing::{
     existing_backup_paths, remove_bom_from_files, rewrite_files, trash_backup_files,
+    would_remove_bom, would_rewrite,
 };
 use line_endings::types::{self, FileAnalysis, LineEndingTarget};
 use line_endings::utils::get_paths_matching_glob;
@@ -119,6 +120,21 @@ fn main() -> Result<()> {
         return Err(anyhow::anyhow!("  Files with errors: {has_errors}"));
     }
 
+    // In dry-run mode, report what would change and stop before any mutation.
+    if config.dry_run {
+        print_dry_run(&config, &results);
+        print_summary(
+            analyzed_files,
+            binary_files,
+            mixed_files,
+            total_lf,
+            total_crlf,
+            analysis_duration,
+            start_time.elapsed(),
+        );
+        return Ok(());
+    }
+
     let will_mutate = config.has_rewrite_option() || config.remove_bom;
 
     // Snapshot backups that already exist *before* any mutation. These were not
@@ -200,6 +216,40 @@ fn build_config_display(config: &types::ConfigSettings) -> Vec<String> {
     }
 
     config_parts
+}
+
+/// Reports what each file would have done in a real run, without modifying it.
+fn print_dry_run(config: &types::ConfigSettings, results: &[FileAnalysis]) {
+    println!("\n--- Dry run (no files will be modified) ---");
+
+    let target_label = match config.line_ending_target {
+        LineEndingTarget::Linux => Some("LF"),
+        LineEndingTarget::Windows => Some("CRLF"),
+        LineEndingTarget::None => None,
+    };
+
+    let mut would_change = 0usize;
+    for result in results {
+        if result.is_binary || result.error.is_some() {
+            continue;
+        }
+        let path = result.path.display();
+        if let Some(label) = target_label
+            && would_rewrite(result, config.line_ending_target)
+        {
+            println!("\"{path}\"\twould rewrite to {label}");
+            would_change += 1;
+        }
+        if config.remove_bom && would_remove_bom(result) {
+            let bom = result.bom_type.expect("would_remove_bom implies a BOM");
+            println!("\"{path}\"\twould remove BOM: {bom}");
+            would_change += 1;
+        }
+    }
+
+    if would_change == 0 {
+        println!("No files would be modified");
+    }
 }
 
 /// Snapshots backups that already exist before any mutation and warns that

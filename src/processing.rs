@@ -81,6 +81,24 @@ pub fn rewrite_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Resul
     }
 }
 
+/// Returns true if the file would be rewritten for the given target: it has
+/// mixed line endings, or is exclusively the wrong type. Pure decision shared
+/// by the real rewrite path and the dry-run preview.
+#[must_use]
+pub fn would_rewrite(result: &FileAnalysis, target: LineEndingTarget) -> bool {
+    result.has_mixed_line_endings()
+        || (target == LineEndingTarget::Linux && result.is_crlf_only())
+        || (target == LineEndingTarget::Windows && result.is_lf_only())
+}
+
+/// Returns true if a BOM would be removed from the file: it is a non-binary,
+/// error-free file that has a BOM. Pure decision shared by the real removal
+/// path and the dry-run preview.
+#[must_use]
+pub fn would_remove_bom(result: &FileAnalysis) -> bool {
+    !result.is_binary && result.error.is_none() && result.has_bom()
+}
+
 /// Processes a single file for rewriting based on configuration and line ending analysis
 #[must_use]
 pub fn process_file_for_rewrite(
@@ -88,20 +106,7 @@ pub fn process_file_for_rewrite(
     config: &ConfigSettings,
     ending: LineEnding,
 ) -> RewriteResult {
-    let mut rebuild = false;
-
-    if result.has_mixed_line_endings() {
-        // mixed line endings, always rebuild
-        rebuild = true;
-    }
-    if (config.line_ending_target == LineEndingTarget::Linux && result.is_crlf_only())
-        || (config.line_ending_target == LineEndingTarget::Windows && result.is_lf_only())
-    {
-        // rebuild if its exclusively the wrong type
-        rebuild = true;
-    }
-
-    if rebuild {
+    if would_rewrite(result, config.line_ending_target) {
         match rewrite_file_with_line_ending(&result.path, ending) {
             Ok(()) => RewriteResult {
                 path: result.path.clone(),
@@ -297,7 +302,7 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
 #[must_use]
 pub fn process_file_for_bom_removal(result: &FileAnalysis) -> BomRemovalResult {
     // Skip binary files, files without BOMs, or files with errors
-    if result.is_binary || result.error.is_some() || !result.has_bom() {
+    if !would_remove_bom(result) {
         return BomRemovalResult {
             path: result.path.clone(),
             removed: false,

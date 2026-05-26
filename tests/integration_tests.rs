@@ -48,6 +48,7 @@ fn create_test_config() -> ConfigSettings {
         remove_bom: false,
         recursive: true,
         no_trash: false,
+        dry_run: false,
         supplied_paths: vec![],
         folder: None,
     }
@@ -1140,5 +1141,40 @@ fn test_symlink_is_detected_and_excluded() {
             .file_name()
             .is_some_and(|n| n == "real.txt")),
         "the real file should be present, got {paths:?}"
+    );
+}
+
+#[test]
+fn test_dry_run_does_not_modify_files() {
+    use std::process::Command;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("dry.txt");
+    let original = b"line one\r\nline two\r\n";
+    fs::write(&file, original).expect("Failed to write file");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_line_endings"))
+        .args(["--dry-run", "--linux-line-endings", "dry.txt"])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to run binary");
+
+    assert!(output.status.success(), "dry run should exit successfully");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Dry run"),
+        "output should announce dry run, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("would rewrite to LF"),
+        "output should preview the rewrite, got:\n{stdout}"
+    );
+
+    // File and its content must be untouched, and no backup created.
+    let after = fs::read(&file).expect("file should still exist");
+    assert_eq!(after, original, "dry run must not modify the file");
+    assert!(
+        !file.with_extension("txt.bak").exists(),
+        "dry run must not create a backup"
     );
 }
