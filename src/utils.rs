@@ -1,5 +1,6 @@
 use anyhow::Result;
-use std::path::Path;
+use std::collections::HashSet;
+use std::path::{Path, PathBuf};
 
 use crate::types::ConfigSettings;
 
@@ -70,7 +71,26 @@ pub fn get_paths_matching_glob(config: &ConfigSettings) -> Result<Vec<String>> {
         }
     }
 
-    Ok(result)
+    // De-duplicate across patterns: overlapping globs (or a glob plus a literal
+    // name) can yield the same file more than once. Processing a path twice
+    // would back it up and rewrite it twice -- and concurrently under Rayon.
+    // Key on the canonical path so `./a.txt` and `a.txt` collapse, while
+    // preserving the first-seen display string and overall order.
+    Ok(deduplicate_paths(result))
+}
+
+/// Removes duplicate paths while preserving first-seen order.
+/// Identity is the canonicalized path where available, falling back to the
+/// raw string for paths that cannot be canonicalized.
+fn deduplicate_paths(paths: Vec<String>) -> Vec<String> {
+    let mut seen: HashSet<PathBuf> = HashSet::with_capacity(paths.len());
+    paths
+        .into_iter()
+        .filter(|path| {
+            let key = std::fs::canonicalize(path).unwrap_or_else(|_| PathBuf::from(path));
+            seen.insert(key)
+        })
+        .collect()
 }
 
 /// check if file exists

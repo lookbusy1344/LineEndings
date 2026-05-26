@@ -1066,3 +1066,30 @@ fn test_lone_cr_preserved_during_conversion() {
         "lone CR preserved; LF and CRLF normalised to CRLF"
     );
 }
+
+#[test]
+fn test_overlapping_globs_deduplicate() {
+    use line_endings::utils::get_paths_matching_glob;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("test_linux.txt");
+    fs::write(&file, b"hello\n").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    // Two patterns that both match the same file, plus the literal name.
+    config.supplied_paths = vec![
+        "*.txt".to_string(),
+        "test_*.txt".to_string(),
+        "test_linux.txt".to_string(),
+    ];
+    config.recursive = false;
+
+    let paths = get_paths_matching_glob(&config).expect("Should match glob pattern");
+
+    assert_eq!(
+        paths.len(),
+        1,
+        "Overlapping patterns must yield each file exactly once, got {paths:?}"
+    );
+}
