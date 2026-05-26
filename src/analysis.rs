@@ -18,62 +18,51 @@ const UTF16_BE_BOM: &[u8] = &[0xFE, 0xFF];
 const UTF32_LE_BOM: &[u8] = &[0xFF, 0xFE, 0x00, 0x00];
 const UTF32_BE_BOM: &[u8] = &[0x00, 0x00, 0xFE, 0xFF];
 
-/// Analyzes a single file for line endings and BOM
-pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnalysis {
-    // Check if file is binary (skip if detected)
-    match is_binary_file(&path) {
-        Ok(true) => {
-            return FileAnalysis {
-                path: path.as_ref().to_path_buf(),
-                lf_count: 0,
-                crlf_count: 0,
-                cr_count: 0,
-                bom_checked: false,
-                bom_type: None,
-                is_binary: true,
-                error: None,
-            };
-        }
-        Err(e) => {
-            return FileAnalysis {
-                path: path.as_ref().to_path_buf(),
-                lf_count: 0,
-                crlf_count: 0,
-                cr_count: 0,
-                bom_checked: false,
-                bom_type: None,
-                is_binary: false,
-                error: Some(format!("Failed to check file type: {e}")),
-            };
-        }
-        Ok(false) => {} // Not binary, continue processing
-    }
+/// Outcome of a single streaming pass over a file's bytes.
+enum ScanOutcome {
+    /// File was classified as binary; line-ending/BOM data is not meaningful.
+    Binary,
+    /// File is text, with its line-ending tallies and (optionally) BOM.
+    Text {
+        counts: LineEndingCounts,
+        bom_type: Option<BomType>,
+    },
+}
 
-    // Only detect BOM if check_bom is true
-    let bom_type: Option<BomType> = if config.check_bom {
-        match detect_bom(&path) {
-            Ok(bom) => bom,
-            Err(e) => {
-                return FileAnalysis {
-                    path: path.as_ref().to_path_buf(),
-                    lf_count: 0,
-                    crlf_count: 0,
-                    cr_count: 0,
-                    bom_checked: false,
-                    bom_type: None,
-                    is_binary: false,
-                    error: Some(format!("Failed to detect BOM: {e}")),
-                };
-            }
-        }
-    } else {
-        None
+/// Analyzes a single file for line endings and BOM in one pass over its bytes.
+pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnalysis {
+    let path_buf = path.as_ref().to_path_buf();
+
+    let error_analysis = |message: String| FileAnalysis {
+        path: path_buf.clone(),
+        lf_count: 0,
+        crlf_count: 0,
+        cr_count: 0,
+        bom_checked: false,
+        bom_type: None,
+        is_binary: false,
+        error: Some(message),
     };
 
-    // Then count line endings
-    match count_line_endings_in_file(&path) {
-        Ok(counts) => FileAnalysis {
-            path: path.as_ref().to_path_buf(),
+    let file = match File::open(&path) {
+        Ok(file) => file,
+        Err(e) => return error_analysis(format!("Failed to open file: {e}")),
+    };
+
+    let mut reader = BufReader::with_capacity(BUFFER_SIZE, file);
+    match scan_reader(&mut reader, config.check_bom) {
+        Ok(ScanOutcome::Binary) => FileAnalysis {
+            path: path_buf,
+            lf_count: 0,
+            crlf_count: 0,
+            cr_count: 0,
+            bom_checked: false,
+            bom_type: None,
+            is_binary: true,
+            error: None,
+        },
+        Ok(ScanOutcome::Text { counts, bom_type }) => FileAnalysis {
+            path: path_buf,
             lf_count: counts.lf,
             crlf_count: counts.crlf,
             cr_count: counts.cr,
@@ -82,17 +71,101 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
             is_binary: false,
             error: None,
         },
-        Err(e) => FileAnalysis {
-            path: path.as_ref().to_path_buf(),
-            lf_count: 0,
-            crlf_count: 0,
-            cr_count: 0,
-            bom_checked: config.check_bom,
-            bom_type,
-            is_binary: false,
-            error: Some(e.to_string()),
-        },
+        Err(e) => error_analysis(e.to_string()),
     }
+}
+
+/// Performs binary detection, BOM detection, and line-ending counting in a
+/// single streaming pass, replacing three separate opens of the same file.
+///
+/// A file is classified as binary if it contains a null byte or more than 30%
+/// non-printable bytes within the first [`BINARY_CHECK_SIZE`] bytes. Detection
+/// short-circuits as soon as the file is known to be binary, so large binary
+/// files are not scanned in full.
+fn scan_reader<R: Read>(reader: &mut BufReader<R>, check_bom: bool) -> Result<ScanOutcome> {
+    let mut buffer = [0u8; BUFFER_SIZE];
+    let mut counts = LineEndingCounts::default();
+    let mut prev_was_cr = false;
+
+    // Binary-detection state, confined to the first BINARY_CHECK_SIZE bytes.
+    let mut head_examined = 0usize;
+    let mut non_printable = 0usize;
+    let mut head_decided = false;
+
+    // First up-to-4 bytes, for BOM detection.
+    let mut bom_buf = [0u8; 4];
+    let mut bom_len = 0usize;
+
+    loop {
+        let n = reader.read(&mut buffer)?;
+        if n == 0 {
+            break;
+        }
+        for &b in &buffer[..n] {
+            if bom_len < bom_buf.len() {
+                bom_buf[bom_len] = b;
+                bom_len += 1;
+            }
+
+            // Binary detection over the leading window only.
+            if !head_decided {
+                if b == 0 {
+                    return Ok(ScanOutcome::Binary);
+                }
+                if !is_text_byte(b) {
+                    non_printable += 1;
+                }
+                head_examined += 1;
+                if head_examined >= BINARY_CHECK_SIZE {
+                    if non_printable > head_examined * 30 / 100 {
+                        return Ok(ScanOutcome::Binary);
+                    }
+                    head_decided = true;
+                }
+            }
+
+            match b {
+                CR => {
+                    if prev_was_cr {
+                        counts.cr += 1;
+                    }
+                    prev_was_cr = true;
+                }
+                LF => {
+                    if prev_was_cr {
+                        counts.crlf += 1;
+                    } else {
+                        counts.lf += 1;
+                    }
+                    prev_was_cr = false;
+                }
+                _ => {
+                    if prev_was_cr {
+                        counts.cr += 1;
+                    }
+                    prev_was_cr = false;
+                }
+            }
+        }
+    }
+
+    // A trailing CR at EOF is a lone CR.
+    if prev_was_cr {
+        counts.cr += 1;
+    }
+
+    // For files shorter than the head window, apply the ratio test at EOF.
+    if !head_decided && head_examined > 0 && non_printable > head_examined * 30 / 100 {
+        return Ok(ScanOutcome::Binary);
+    }
+
+    let bom_type = if check_bom {
+        bom_from_bytes(&bom_buf[..bom_len])
+    } else {
+        None
+    };
+
+    Ok(ScanOutcome::Text { counts, bom_type })
 }
 
 /// Opens a file and counts the line endings
@@ -173,49 +246,26 @@ pub fn detect_bom(file_path: impl AsRef<Path>) -> Result<Option<BomType>> {
     // Read up to 4 bytes from the beginning of the file
     let bytes_read = file.read(&mut buffer)?;
 
-    // Check longer BOMs first to avoid false matches (UTF-32 LE starts with UTF-16 LE bytes)
-    if bytes_read >= 4 && buffer[0..4] == UTF32_LE_BOM[..] {
-        return Ok(Some(BomType::Utf32Le));
-    } else if bytes_read >= 4 && buffer[0..4] == UTF32_BE_BOM[..] {
-        return Ok(Some(BomType::Utf32Be));
-    } else if bytes_read >= 3 && buffer[0..3] == UTF8_BOM[..] {
-        return Ok(Some(BomType::Utf8));
-    } else if bytes_read >= 2 && buffer[0..2] == UTF16_LE_BOM[..] {
-        return Ok(Some(BomType::Utf16Le));
-    } else if bytes_read >= 2 && buffer[0..2] == UTF16_BE_BOM[..] {
-        return Ok(Some(BomType::Utf16Be));
-    }
-
-    Ok(None)
+    Ok(bom_from_bytes(&buffer[..bytes_read]))
 }
 
-/// Detects if a file is binary by checking for null bytes and non-printable characters
-///
-/// # Errors
-///
-/// Returns an error if the file cannot be opened or read.
-pub fn is_binary_file(path: impl AsRef<Path>) -> Result<bool> {
-    let mut file = File::open(path)?;
-    let mut buffer = vec![0u8; BINARY_CHECK_SIZE];
-
-    let bytes_read = file.read(&mut buffer)?;
-    if bytes_read == 0 {
-        return Ok(false); // Empty file is not binary
+/// Identifies a BOM from the leading bytes of a file.
+/// Checks longer BOMs first to avoid false matches (UTF-32 LE starts with the
+/// same two bytes as UTF-16 LE).
+fn bom_from_bytes(head: &[u8]) -> Option<BomType> {
+    if head.len() >= 4 && head[0..4] == *UTF32_LE_BOM {
+        Some(BomType::Utf32Le)
+    } else if head.len() >= 4 && head[0..4] == *UTF32_BE_BOM {
+        Some(BomType::Utf32Be)
+    } else if head.len() >= 3 && head[0..3] == *UTF8_BOM {
+        Some(BomType::Utf8)
+    } else if head.len() >= 2 && head[0..2] == *UTF16_LE_BOM {
+        Some(BomType::Utf16Le)
+    } else if head.len() >= 2 && head[0..2] == *UTF16_BE_BOM {
+        Some(BomType::Utf16Be)
+    } else {
+        None
     }
-
-    let buffer = &buffer[..bytes_read];
-
-    // Check for null bytes (strong indicator of binary)
-    if buffer.contains(&0) {
-        return Ok(true);
-    }
-
-    // Count non-printable characters (excluding common whitespace)
-    let non_printable_count = buffer.iter().filter(|&&b| !is_text_byte(b)).count();
-
-    // If more than 30% non-printable, consider it binary
-    let threshold = bytes_read * 30 / 100;
-    Ok(non_printable_count > threshold)
 }
 
 /// Checks if a byte is a typical text character

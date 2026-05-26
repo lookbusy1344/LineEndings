@@ -5,19 +5,16 @@ use pico_args::Arguments;
 use rayon::prelude::*;
 use std::time::Instant;
 
-mod analysis;
-mod config;
 mod help;
-mod processing;
-mod types;
-mod utils;
 
-use analysis::analyze_file;
-use config::parse_args;
 use help::show_help;
-use processing::{existing_backup_paths, remove_bom_from_files, rewrite_files, trash_backup_files};
-use types::{FileAnalysis, LineEndingTarget};
-use utils::get_paths_matching_glob;
+use line_endings::analysis::analyze_file;
+use line_endings::config::parse_args;
+use line_endings::processing::{
+    existing_backup_paths, remove_bom_from_files, rewrite_files, trash_backup_files,
+};
+use line_endings::types::{self, FileAnalysis, LineEndingTarget};
+use line_endings::utils::get_paths_matching_glob;
 
 /// Formats and prints analysis results for a successfully analyzed file
 fn print_file_analysis(result: &FileAnalysis) {
