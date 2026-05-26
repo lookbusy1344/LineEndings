@@ -6,6 +6,17 @@
 **Version reviewed:** 1.1.4 (commit `7952ed7`)
 **Supersedes:** `code-review-2026-02-28.md` (most of its findings are now fixed — see "Status of prior review")
 
+> **Resolution (2026-05-26):** All issues below were remediated on branch
+> `code-review-fixes-2026-05-26`, each as its own commit with tests:
+> 1. permissions preserved on rewrite/BOM removal — `662ab06`
+> 2. never trash pre-existing/unrelated `.bak` — `363e72e`
+> 3. byte-level rewrite (non-UTF-8 safe) — `e2cc38a`
+> 4. glob dedup — `83d3290`
+> 5. single-pass analysis — `abb6773`
+> 6. CR-only detection + UTF-16/32 & symlink docs — `ecbab9c`
+> 7. symlinks excluded — `f681740`
+> 8. `--dry-run` — `b8c2ace`
+
 ---
 
 ## Summary
