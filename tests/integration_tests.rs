@@ -961,3 +961,59 @@ fn test_multiple_files_processed_correctly() {
         "Mixed file should be converted to LF"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn test_file_permissions_preserved_on_line_ending_conversion() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let script = temp_dir.path().join("script.sh");
+    fs::write(&script, b"#!/bin/sh\r\necho hi\r\n").expect("Failed to write file");
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+        .expect("Failed to set permissions");
+
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Linux;
+
+    let analysis = analyze_file(&script, &config);
+    let result = rewrite_files(&config, &[analysis]);
+    assert!(result.is_ok(), "File rewrite should succeed");
+
+    let mode = fs::metadata(&script)
+        .expect("Failed to stat file")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        mode, 0o755,
+        "Executable bit must survive line-ending rewrite"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_file_permissions_preserved_on_bom_removal() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("config.toml");
+    fs::write(&file, b"\xEF\xBB\xBFkey = 1\n").expect("Failed to write file");
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
+        .expect("Failed to set permissions");
+
+    let mut config = create_test_config();
+    config.remove_bom = true;
+
+    let analysis = analyze_file(&file, &config);
+    assert!(analysis.has_bom(), "Test file should have a BOM");
+    let result = remove_bom_from_files(&config, &[analysis]);
+    assert!(result.is_ok(), "BOM removal should succeed");
+
+    let mode = fs::metadata(&file)
+        .expect("Failed to stat file")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o644, "File mode must survive BOM removal");
+}

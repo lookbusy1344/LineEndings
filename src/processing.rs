@@ -121,6 +121,15 @@ pub fn process_file_for_rewrite(
     }
 }
 
+/// Copies the original file's permissions onto the replacement temp file.
+/// `NamedTempFile` is created with restrictive `0600` permissions and the
+/// running process's ownership, so without this the rewritten file would lose
+/// its original mode (e.g. an executable script's `+x` bit).
+fn preserve_permissions(temp_file: &NamedTempFile, original: &Path) -> io::Result<()> {
+    let perms = std::fs::metadata(original)?.permissions();
+    temp_file.as_file().set_permissions(perms)
+}
+
 /// Creates a backup of a file if it doesn't already exist
 fn create_backup_if_needed(input_path: &Path) -> io::Result<()> {
     let backup_path = get_backup_path(input_path);
@@ -195,6 +204,9 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
 
     // Ensure all data is written before replacing files
     temp_file.flush()?;
+
+    // Preserve the original file's permissions before replacing it
+    preserve_permissions(&temp_file, input_path)?;
 
     // Atomically replace the original file with the temp file
     temp_file.persist(input_path)?;
@@ -353,6 +365,9 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
 
     // Ensure all data is written before replacing files
     temp_file.flush()?;
+
+    // Preserve the original file's permissions before replacing it
+    preserve_permissions(&temp_file, path)?;
 
     // Atomically replace the original file with the temp file
     temp_file.persist(path)?;
