@@ -17,6 +17,7 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
     let remove_bom = args.contains(["-m", "--remove-bom"]);
     let recursive = args.contains(["-r", "--recursive"]);
     let no_trash = args.contains(["-n", "--no-trash"]);
+    let dry_run = args.contains(["-d", "--dry-run"]);
 
     let folder: Option<String> = args.opt_value_from_str(["-f", "--folder"])?;
 
@@ -67,6 +68,7 @@ pub fn parse_args(mut args: Arguments) -> Result<ConfigSettings> {
         remove_bom,
         recursive,
         no_trash,
+        dry_run,
         supplied_paths: file_paths,
         folder,
     })

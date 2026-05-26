@@ -1,8 +1,9 @@
 use anyhow::Result;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read, Seek, Write};
-use std::path::Path;
+use std::io::{self, BufReader, BufWriter, Read, Write};
+use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
 use crate::types::{
@@ -12,6 +13,8 @@ use crate::types::{
 
 // Define constants for line ending characters and buffer size
 const BUFFER_SIZE: usize = 4096; // 4KB buffer for more efficient reading
+const CR: u8 = b'\r';
+const LF: u8 = b'\n';
 
 /// Rewrites files with specified line endings based on the configuration settings.
 ///
@@ -78,6 +81,24 @@ pub fn rewrite_files(config: &ConfigSettings, results: &[FileAnalysis]) -> Resul
     }
 }
 
+/// Returns true if the file would be rewritten for the given target: it has
+/// mixed line endings, or is exclusively the wrong type. Pure decision shared
+/// by the real rewrite path and the dry-run preview.
+#[must_use]
+pub fn would_rewrite(result: &FileAnalysis, target: LineEndingTarget) -> bool {
+    result.has_mixed_line_endings()
+        || (target == LineEndingTarget::Linux && result.is_crlf_only())
+        || (target == LineEndingTarget::Windows && result.is_lf_only())
+}
+
+/// Returns true if a BOM would be removed from the file: it is a non-binary,
+/// error-free file that has a BOM. Pure decision shared by the real removal
+/// path and the dry-run preview.
+#[must_use]
+pub fn would_remove_bom(result: &FileAnalysis) -> bool {
+    !result.is_binary && result.error.is_none() && result.has_bom()
+}
+
 /// Processes a single file for rewriting based on configuration and line ending analysis
 #[must_use]
 pub fn process_file_for_rewrite(
@@ -85,20 +106,7 @@ pub fn process_file_for_rewrite(
     config: &ConfigSettings,
     ending: LineEnding,
 ) -> RewriteResult {
-    let mut rebuild = false;
-
-    if result.has_mixed_line_endings() {
-        // mixed line endings, always rebuild
-        rebuild = true;
-    }
-    if (config.line_ending_target == LineEndingTarget::Linux && result.is_crlf_only())
-        || (config.line_ending_target == LineEndingTarget::Windows && result.is_lf_only())
-    {
-        // rebuild if its exclusively the wrong type
-        rebuild = true;
-    }
-
-    if rebuild {
+    if would_rewrite(result, config.line_ending_target) {
         match rewrite_file_with_line_ending(&result.path, ending) {
             Ok(()) => RewriteResult {
                 path: result.path.clone(),
@@ -119,6 +127,15 @@ pub fn process_file_for_rewrite(
             error: None,
         }
     }
+}
+
+/// Copies the original file's permissions onto the replacement temp file.
+/// `NamedTempFile` is created with restrictive `0600` permissions and the
+/// running process's ownership, so without this the rewritten file would lose
+/// its original mode (e.g. an executable script's `+x` bit).
+fn preserve_permissions(temp_file: &NamedTempFile, original: &Path) -> io::Result<()> {
+    let perms = std::fs::metadata(original)?.permissions();
+    temp_file.as_file().set_permissions(perms)
 }
 
 /// Creates a backup of a file if it doesn't already exist
@@ -161,62 +178,69 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     let parent = input_path.parent().unwrap_or_else(|| Path::new(""));
     let mut temp_file = NamedTempFile::new_in(parent)?;
 
-    // Check if file ends with a newline by reading only the last byte
-    let has_trailing_newline = check_trailing_newline(input_path)?;
-
-    // Process file line by line without loading into memory
+    // Stream the file at the byte level so any encoding (including non-UTF-8
+    // text such as Latin-1) round-trips without loss. CRLF and lone LF are
+    // normalised to the target ending; a lone CR (not followed by LF) is
+    // preserved verbatim, matching the byte-level analysis stage which counts
+    // neither LF nor CRLF for it.
     let infile = File::open(input_path)?;
-    let reader = BufReader::with_capacity(BUFFER_SIZE, infile);
+    let mut reader = BufReader::with_capacity(BUFFER_SIZE, infile);
+    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, temp_file.as_file_mut());
 
     let line_ending: &[u8] = match ending {
-        LineEnding::Lf => &b"\n"[..],
-        LineEnding::Crlf => &b"\r\n"[..],
+        LineEnding::Lf => b"\n",
+        LineEnding::Crlf => b"\r\n",
     };
 
-    let mut lines = reader.lines();
-    let mut last_line: Option<String> = None;
+    let mut buffer = [0u8; BUFFER_SIZE];
+    let mut prev_was_cr = false;
 
-    // Process all lines except the last
-    for line in lines.by_ref() {
-        if let Some(prev_line) = last_line.take() {
-            temp_file.write_all(prev_line.as_bytes())?;
-            temp_file.write_all(line_ending)?;
+    loop {
+        let n = reader.read(&mut buffer)?;
+        if n == 0 {
+            break;
         }
-        last_line = Some(line?);
+        for &b in &buffer[..n] {
+            match b {
+                CR => {
+                    // A preceding CR was a lone CR — emit it verbatim.
+                    if prev_was_cr {
+                        writer.write_all(&[CR])?;
+                    }
+                    prev_was_cr = true;
+                }
+                LF => {
+                    // Both CRLF (prev_was_cr) and a lone LF map to the target.
+                    writer.write_all(line_ending)?;
+                    prev_was_cr = false;
+                }
+                other => {
+                    if prev_was_cr {
+                        writer.write_all(&[CR])?;
+                        prev_was_cr = false;
+                    }
+                    writer.write_all(&[other])?;
+                }
+            }
+        }
     }
 
-    // Write the last line, adding line ending only if original had trailing newline
-    if let Some(line) = last_line {
-        temp_file.write_all(line.as_bytes())?;
-        if has_trailing_newline {
-            temp_file.write_all(line_ending)?;
-        }
+    // A trailing lone CR at EOF is preserved verbatim.
+    if prev_was_cr {
+        writer.write_all(&[CR])?;
     }
 
-    // Ensure all data is written before replacing files
-    temp_file.flush()?;
+    // Ensure all buffered data reaches the temp file before replacing.
+    writer.flush()?;
+    drop(writer);
+
+    // Preserve the original file's permissions before replacing it
+    preserve_permissions(&temp_file, input_path)?;
 
     // Atomically replace the original file with the temp file
     temp_file.persist(input_path)?;
 
     Ok(())
-}
-
-/// Checks if a file ends with a newline without reading the entire file
-fn check_trailing_newline(path: &Path) -> io::Result<bool> {
-    let mut file = File::open(path)?;
-    let file_size = file.metadata()?.len();
-
-    if file_size == 0 {
-        return Ok(false);
-    }
-
-    // Seek to the last byte
-    file.seek(io::SeekFrom::End(-1))?;
-    let mut last_byte = [0u8; 1];
-    file.read_exact(&mut last_byte)?;
-
-    Ok(last_byte[0] == b'\n')
 }
 
 /// Removes BOMs from files based on the file analysis
@@ -278,7 +302,7 @@ pub fn remove_bom_from_files(config: &ConfigSettings, results: &[FileAnalysis]) 
 #[must_use]
 pub fn process_file_for_bom_removal(result: &FileAnalysis) -> BomRemovalResult {
     // Skip binary files, files without BOMs, or files with errors
-    if result.is_binary || result.error.is_some() || !result.has_bom() {
+    if !would_remove_bom(result) {
         return BomRemovalResult {
             path: result.path.clone(),
             removed: false,
@@ -354,50 +378,87 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
     // Ensure all data is written before replacing files
     temp_file.flush()?;
 
+    // Preserve the original file's permissions before replacing it
+    preserve_permissions(&temp_file, path)?;
+
     // Atomically replace the original file with the temp file
     temp_file.persist(path)?;
 
     Ok(())
 }
 
-/// Deletes backup files for the given file analyses
+/// Returns the set of backup paths that already exist for the given files.
+///
+/// Call this *before* any rewrite/BOM-removal mutates files. Backups that
+/// already exist at that point were not created by this run (a stale backup
+/// from an aborted run, or an unrelated user file such as a hand-written
+/// `notes.txt.bak`) and must never be trashed.
+#[must_use]
+pub fn existing_backup_paths(results: &[FileAnalysis]) -> HashSet<PathBuf> {
+    results
+        .iter()
+        .filter(|result| result.error.is_none())
+        .map(|result| get_backup_path(&result.path))
+        .filter(|backup_path| backup_path.exists())
+        .collect()
+}
+
+/// Determines which backups are safe to trash: those that exist now and were
+/// not present before the run (i.e. created by this run).
+fn backups_eligible_for_trash<S: std::hash::BuildHasher>(
+    results: &[FileAnalysis],
+    preexisting: &HashSet<PathBuf, S>,
+) -> Vec<PathBuf> {
+    results
+        .iter()
+        .filter(|result| result.error.is_none())
+        .map(|result| get_backup_path(&result.path))
+        .filter(|backup_path| backup_path.exists() && !preexisting.contains(backup_path))
+        .collect()
+}
+
+/// Moves backups created by this run to the trash.
+///
+/// `preexisting` is the set of backup paths that already existed before the
+/// run (from [`existing_backup_paths`]); those are left untouched so an
+/// unrelated or stale `.bak` is never destroyed.
 ///
 /// # Errors
 ///
 /// Returns an error if backup deletion fails.
-pub fn trash_backup_files(results: &[FileAnalysis]) -> Result<()> {
+pub fn trash_backup_files<S: std::hash::BuildHasher>(
+    results: &[FileAnalysis],
+    preexisting: &HashSet<PathBuf, S>,
+) -> Result<()> {
     println!();
 
+    let to_trash = backups_eligible_for_trash(results, preexisting);
     let mut deleted_count = 0usize;
-    let mut not_found_count = 0usize;
 
-    for result in results {
-        // Skip files with errors
-        if result.error.is_some() {
-            continue;
-        }
-
-        let backup_path = get_backup_path(&result.path);
-        if backup_path.exists() {
-            match trash::delete(&backup_path) {
-                Ok(()) => {
-                    println!("\"{}\"\tbackup moved to trash", backup_path.display());
-                    deleted_count += 1;
-                }
-                Err(e) => {
-                    return Err(anyhow::anyhow!(
-                        "Failed to move backup to trash {}: {}",
-                        backup_path.display(),
-                        e
-                    ));
-                }
+    for backup_path in &to_trash {
+        match trash::delete(backup_path) {
+            Ok(()) => {
+                println!("\"{}\"\tbackup moved to trash", backup_path.display());
+                deleted_count += 1;
             }
-        } else {
-            not_found_count += 1;
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to move backup to trash {}: {}",
+                    backup_path.display(),
+                    e
+                ));
+            }
         }
     }
 
-    println!("Moved {deleted_count} backup file(s) to trash, {not_found_count} not found");
+    let preserved = preexisting.len();
+    if preserved > 0 {
+        println!(
+            "Moved {deleted_count} backup file(s) to trash, kept {preserved} pre-existing backup file(s)"
+        );
+    } else {
+        println!("Moved {deleted_count} backup file(s) to trash");
+    }
 
     Ok(())
 }
@@ -429,5 +490,64 @@ mod tests {
         let path = std::path::Path::new(".gitignore");
         let backup = get_backup_path(path);
         assert_eq!(backup, std::path::Path::new(".gitignore.bak"));
+    }
+
+    fn analysis_for(path: &Path) -> FileAnalysis {
+        FileAnalysis {
+            path: path.to_path_buf(),
+            lf_count: 1,
+            crlf_count: 0,
+            cr_count: 0,
+            bom_checked: false,
+            bom_type: None,
+            is_binary: false,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn test_preexisting_backup_is_not_eligible_for_trash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, b"data\n").expect("write file");
+        // An unrelated/pre-existing backup the user owns.
+        let backup = get_backup_path(&file);
+        std::fs::write(&backup, b"user data\n").expect("write backup");
+
+        let results = vec![analysis_for(&file)];
+        let preexisting = existing_backup_paths(&results);
+        assert!(
+            preexisting.contains(&backup),
+            "pre-existing backup should be snapshotted"
+        );
+
+        let eligible = backups_eligible_for_trash(&results, &preexisting);
+        assert!(
+            eligible.is_empty(),
+            "a pre-existing backup must never be trashed, got {eligible:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_created_backup_is_eligible_for_trash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, b"data\n").expect("write file");
+
+        let results = vec![analysis_for(&file)];
+        // Snapshot before the backup exists (as main does before mutation).
+        let preexisting = existing_backup_paths(&results);
+        assert!(preexisting.is_empty());
+
+        // Simulate the run creating the backup.
+        let backup = get_backup_path(&file);
+        std::fs::write(&backup, b"data\n").expect("write backup");
+
+        let eligible = backups_eligible_for_trash(&results, &preexisting);
+        assert_eq!(
+            eligible,
+            vec![backup],
+            "a backup created during the run should be eligible for trash"
+        );
     }
 }

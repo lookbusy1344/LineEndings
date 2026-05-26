@@ -5,31 +5,36 @@ use pico_args::Arguments;
 use rayon::prelude::*;
 use std::time::Instant;
 
-mod analysis;
-mod config;
 mod help;
-mod processing;
-mod types;
-mod utils;
 
-use analysis::analyze_file;
-use config::parse_args;
 use help::show_help;
-use processing::{remove_bom_from_files, rewrite_files, trash_backup_files};
-use types::{FileAnalysis, LineEndingTarget};
-use utils::get_paths_matching_glob;
+use line_endings::analysis::analyze_file;
+use line_endings::config::parse_args;
+use line_endings::processing::{
+    existing_backup_paths, remove_bom_from_files, rewrite_files, trash_backup_files,
+    would_remove_bom, would_rewrite,
+};
+use line_endings::types::{self, FileAnalysis, LineEndingTarget};
+use line_endings::utils::get_paths_matching_glob;
 
 /// Formats and prints analysis results for a successfully analyzed file
 fn print_file_analysis(result: &FileAnalysis) {
     let file_name = result.path.display();
-    let line_endings = if result.lf_count == 0 && result.crlf_count == 0 {
-        String::from("None")
-    } else if result.lf_count > 0 && result.crlf_count == 0 {
-        format!("LF {}", result.lf_count)
-    } else if result.lf_count == 0 && result.crlf_count > 0 {
-        format!("CRLF {}", result.crlf_count)
-    } else {
-        format!("Mixed LF {}, CRLF {}", result.lf_count, result.crlf_count)
+
+    let mut parts = Vec::new();
+    if result.lf_count > 0 {
+        parts.push(format!("LF {}", result.lf_count));
+    }
+    if result.crlf_count > 0 {
+        parts.push(format!("CRLF {}", result.crlf_count));
+    }
+    if result.cr_count > 0 {
+        parts.push(format!("CR {}", result.cr_count));
+    }
+    let line_endings = match parts.len() {
+        0 => String::from("None"),
+        1 => parts.remove(0),
+        _ => format!("Mixed {}", parts.join(", ")),
     };
 
     let bom_info = if result.bom_checked {
@@ -56,7 +61,7 @@ fn main() -> Result<()> {
 
     let start_time = Instant::now();
 
-    // expand glob patterns and get file paths
+    // expand glob patterns and get file paths (symbolic links are excluded)
     let expanded_paths =
         get_paths_matching_glob(&config).with_context(|| "Failed to expand glob patterns")?;
 
@@ -64,45 +69,8 @@ fn main() -> Result<()> {
         return Err(anyhow::anyhow!("No input files found"));
     }
 
-    // Build configuration display, only showing non-default/active options
-    let mut config_parts = Vec::new();
-
-    // Always show folder if not current directory
-    if let Some(folder) = &config.folder
-        && folder != "."
-    {
-        config_parts.push(format!("Folder: {folder}"));
-    }
-
-    // Only show boolean flags if they are true
-    if config.case_sensitive {
-        config_parts.push("Case sensitive: true".to_string());
-    }
-    if config.recursive {
-        config_parts.push("Recursive: true".to_string());
-    }
-    if config.check_bom {
-        config_parts.push("Check BOM: true".to_string());
-    }
-    if config.remove_bom {
-        config_parts.push("Remove BOM: true".to_string());
-    }
-    if config.no_trash {
-        config_parts.push("Trash backups: disabled".to_string());
-    }
-
-    // Only show line ending alteration if one is set
-    match config.line_ending_target {
-        LineEndingTarget::Linux => {
-            config_parts.push("Line ending alteration: Linux (LF)".to_string());
-        }
-        LineEndingTarget::Windows => {
-            config_parts.push("Line ending alteration: Windows (CRLF)".to_string());
-        }
-        LineEndingTarget::None => {} // Don't show anything for no alteration
-    }
-
     // Display configuration if there are any non-default options
+    let config_parts = build_config_display(&config);
     if !config_parts.is_empty() {
         println!("{}", config_parts.join(", "));
     }
@@ -152,6 +120,32 @@ fn main() -> Result<()> {
         return Err(anyhow::anyhow!("  Files with errors: {has_errors}"));
     }
 
+    // In dry-run mode, report what would change and stop before any mutation.
+    if config.dry_run {
+        print_dry_run(&config, &results);
+        print_summary(
+            analyzed_files,
+            binary_files,
+            mixed_files,
+            total_lf,
+            total_crlf,
+            analysis_duration,
+            start_time.elapsed(),
+        );
+        return Ok(());
+    }
+
+    let will_mutate = config.has_rewrite_option() || config.remove_bom;
+
+    // Snapshot backups that already exist *before* any mutation. These were not
+    // created by this run (stale leftovers or unrelated user files) and must
+    // never be trashed.
+    let preexisting_backups = if will_mutate {
+        snapshot_and_warn_preexisting_backups(&results)
+    } else {
+        std::collections::HashSet::new()
+    };
+
     // optionally rewrite files if requested
     if config.has_rewrite_option() {
         rewrite_files(&config, &results)?;
@@ -163,8 +157,8 @@ fn main() -> Result<()> {
     }
 
     // Move backup files to trash unless --no-trash was specified
-    if !config.no_trash && (config.has_rewrite_option() || config.remove_bom) {
-        trash_backup_files(&results)?;
+    if !config.no_trash && will_mutate {
+        trash_backup_files(&results, &preexisting_backups)?;
     }
 
     // Print summary statistics
@@ -180,6 +174,97 @@ fn main() -> Result<()> {
     );
 
     Ok(())
+}
+
+/// Builds the list of non-default/active configuration options to display.
+fn build_config_display(config: &types::ConfigSettings) -> Vec<String> {
+    let mut config_parts = Vec::new();
+
+    // Always show folder if not current directory
+    if let Some(folder) = &config.folder
+        && folder != "."
+    {
+        config_parts.push(format!("Folder: {folder}"));
+    }
+
+    // Only show boolean flags if they are true
+    if config.case_sensitive {
+        config_parts.push("Case sensitive: true".to_string());
+    }
+    if config.recursive {
+        config_parts.push("Recursive: true".to_string());
+    }
+    if config.check_bom {
+        config_parts.push("Check BOM: true".to_string());
+    }
+    if config.remove_bom {
+        config_parts.push("Remove BOM: true".to_string());
+    }
+    if config.no_trash {
+        config_parts.push("Trash backups: disabled".to_string());
+    }
+
+    // Only show line ending alteration if one is set
+    match config.line_ending_target {
+        LineEndingTarget::Linux => {
+            config_parts.push("Line ending alteration: Linux (LF)".to_string());
+        }
+        LineEndingTarget::Windows => {
+            config_parts.push("Line ending alteration: Windows (CRLF)".to_string());
+        }
+        LineEndingTarget::None => {} // Don't show anything for no alteration
+    }
+
+    config_parts
+}
+
+/// Reports what each file would have done in a real run, without modifying it.
+fn print_dry_run(config: &types::ConfigSettings, results: &[FileAnalysis]) {
+    println!("\n--- Dry run (no files will be modified) ---");
+
+    let target_label = match config.line_ending_target {
+        LineEndingTarget::Linux => Some("LF"),
+        LineEndingTarget::Windows => Some("CRLF"),
+        LineEndingTarget::None => None,
+    };
+
+    let mut would_change = 0usize;
+    for result in results {
+        if result.is_binary || result.error.is_some() {
+            continue;
+        }
+        let path = result.path.display();
+        if let Some(label) = target_label
+            && would_rewrite(result, config.line_ending_target)
+        {
+            println!("\"{path}\"\twould rewrite to {label}");
+            would_change += 1;
+        }
+        if config.remove_bom && would_remove_bom(result) {
+            let bom = result.bom_type.expect("would_remove_bom implies a BOM");
+            println!("\"{path}\"\twould remove BOM: {bom}");
+            would_change += 1;
+        }
+    }
+
+    if would_change == 0 {
+        println!("No files would be modified");
+    }
+}
+
+/// Snapshots backups that already exist before any mutation and warns that
+/// each will neither be refreshed nor trashed by this run.
+fn snapshot_and_warn_preexisting_backups(
+    results: &[FileAnalysis],
+) -> std::collections::HashSet<std::path::PathBuf> {
+    let preexisting = existing_backup_paths(results);
+    for backup_path in &preexisting {
+        println!(
+            "Warning: backup \"{}\" already exists; it will not be refreshed and the change will not be protected by it",
+            backup_path.display()
+        );
+    }
+    preexisting
 }
 
 fn print_summary(

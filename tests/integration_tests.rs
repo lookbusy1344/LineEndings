@@ -48,6 +48,7 @@ fn create_test_config() -> ConfigSettings {
         remove_bom: false,
         recursive: true,
         no_trash: false,
+        dry_run: false,
         supplied_paths: vec![],
         folder: None,
     }
@@ -323,16 +324,27 @@ fn test_count_line_endings_directly() {
 
     // Test direct line ending counting without config
     let windows_file = temp_dir.path().join("test_windows.txt");
-    let (lf_count, crlf_count) =
-        count_line_endings_in_file(&windows_file).expect("Should count line endings");
-    assert_eq!(lf_count, 0, "Windows file should have no LF");
-    assert!(crlf_count > 0, "Windows file should have CRLF");
+    let counts = count_line_endings_in_file(&windows_file).expect("Should count line endings");
+    assert_eq!(counts.lf, 0, "Windows file should have no LF");
+    assert!(counts.crlf > 0, "Windows file should have CRLF");
 
     let linux_file = temp_dir.path().join("test_linux.txt");
-    let (lf_count, crlf_count) =
-        count_line_endings_in_file(&linux_file).expect("Should count line endings");
-    assert!(lf_count > 0, "Linux file should have LF");
-    assert_eq!(crlf_count, 0, "Linux file should have no CRLF");
+    let counts = count_line_endings_in_file(&linux_file).expect("Should count line endings");
+    assert!(counts.lf > 0, "Linux file should have LF");
+    assert_eq!(counts.crlf, 0, "Linux file should have no CRLF");
+}
+
+#[test]
+fn test_count_line_endings_mixed_with_lone_cr() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("mixed.txt");
+    // 1 lone CR (a\rb), 1 CRLF (b\r\nc), 1 LF (c\nd), 1 trailing lone CR (d\r)
+    fs::write(&file, b"a\rb\r\nc\nd\r").expect("Failed to write file");
+
+    let counts = count_line_endings_in_file(&file).expect("Should count line endings");
+    assert_eq!(counts.lf, 1, "one lone LF");
+    assert_eq!(counts.crlf, 1, "one CRLF pair");
+    assert_eq!(counts.cr, 2, "two lone CRs (interior and trailing)");
 }
 
 #[test]
@@ -517,6 +529,7 @@ fn test_file_with_only_cr() {
     assert!(analysis.error.is_none(), "CR file should not error");
     assert_eq!(analysis.lf_count, 0, "Should have no LF");
     assert_eq!(analysis.crlf_count, 0, "Should have no CRLF");
+    assert_eq!(analysis.cr_count, 3, "Should detect 3 lone CR endings");
 }
 
 #[test]
@@ -534,6 +547,7 @@ fn test_file_ending_with_cr_no_lf() {
     assert!(analysis.error.is_none(), "Should not error");
     assert_eq!(analysis.lf_count, 1, "Should have 1 LF");
     assert_eq!(analysis.crlf_count, 0, "Should have no CRLF");
+    assert_eq!(analysis.cr_count, 1, "Trailing lone CR should be counted");
 }
 
 #[test]
@@ -959,5 +973,208 @@ fn test_multiple_files_processed_correctly() {
     assert!(
         mixed_analysis.is_lf_only(),
         "Mixed file should be converted to LF"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_file_permissions_preserved_on_line_ending_conversion() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let script = temp_dir.path().join("script.sh");
+    fs::write(&script, b"#!/bin/sh\r\necho hi\r\n").expect("Failed to write file");
+    fs::set_permissions(&script, fs::Permissions::from_mode(0o755))
+        .expect("Failed to set permissions");
+
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Linux;
+
+    let analysis = analyze_file(&script, &config);
+    let result = rewrite_files(&config, &[analysis]);
+    assert!(result.is_ok(), "File rewrite should succeed");
+
+    let mode = fs::metadata(&script)
+        .expect("Failed to stat file")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(
+        mode, 0o755,
+        "Executable bit must survive line-ending rewrite"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_file_permissions_preserved_on_bom_removal() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("config.toml");
+    fs::write(&file, b"\xEF\xBB\xBFkey = 1\n").expect("Failed to write file");
+    fs::set_permissions(&file, fs::Permissions::from_mode(0o644))
+        .expect("Failed to set permissions");
+
+    let mut config = create_test_config();
+    config.remove_bom = true;
+
+    let analysis = analyze_file(&file, &config);
+    assert!(analysis.has_bom(), "Test file should have a BOM");
+    let result = remove_bom_from_files(&config, &[analysis]);
+    assert!(result.is_ok(), "BOM removal should succeed");
+
+    let mode = fs::metadata(&file)
+        .expect("Failed to stat file")
+        .permissions()
+        .mode()
+        & 0o777;
+    assert_eq!(mode, 0o644, "File mode must survive BOM removal");
+}
+
+#[test]
+fn test_non_utf8_text_file_converts_and_preserves_bytes() {
+    // Latin-1 byte 0xE9 ('é') is valid text (no null, low non-printable ratio)
+    // but is NOT valid UTF-8. A line-by-line String rewrite would fail on it.
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("latin1.txt");
+    fs::write(&file, b"caf\xE9\r\nr\xE9sum\xE9\r\n").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Linux;
+
+    let analysis = analyze_file(&file, &config);
+    assert!(analysis.is_crlf_only(), "Original should be CRLF only");
+
+    let result = rewrite_files(&config, &[analysis]);
+    assert!(
+        result.is_ok(),
+        "Non-UTF-8 text file should convert without error"
+    );
+
+    let content = fs::read(&file).expect("Should read file");
+    assert_eq!(
+        content, b"caf\xE9\nr\xE9sum\xE9\n",
+        "CRLF converted to LF with non-UTF-8 bytes preserved"
+    );
+}
+
+#[test]
+fn test_lone_cr_preserved_during_conversion() {
+    // A lone CR (not part of CRLF) must pass through untouched, matching the
+    // analysis stage which counts neither LF nor CRLF for it.
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("lonecr.txt");
+    fs::write(&file, b"a\rb\r\nc\n").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Windows;
+
+    let analysis = analyze_file(&file, &config);
+    let result = rewrite_files(&config, &[analysis]);
+    assert!(result.is_ok(), "Conversion should succeed");
+
+    let content = fs::read(&file).expect("Should read file");
+    assert_eq!(
+        content, b"a\rb\r\nc\r\n",
+        "lone CR preserved; LF and CRLF normalised to CRLF"
+    );
+}
+
+#[test]
+fn test_overlapping_globs_deduplicate() {
+    use line_endings::utils::get_paths_matching_glob;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("test_linux.txt");
+    fs::write(&file, b"hello\n").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    // Two patterns that both match the same file, plus the literal name.
+    config.supplied_paths = vec![
+        "*.txt".to_string(),
+        "test_*.txt".to_string(),
+        "test_linux.txt".to_string(),
+    ];
+    config.recursive = false;
+
+    let paths = get_paths_matching_glob(&config).expect("Should match glob pattern");
+
+    assert_eq!(
+        paths.len(),
+        1,
+        "Overlapping patterns must yield each file exactly once, got {paths:?}"
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn test_symlink_is_detected_and_excluded() {
+    use line_endings::utils::{get_paths_matching_glob, is_symlink};
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let target = temp_dir.path().join("real.txt");
+    fs::write(&target, b"line\r\n").expect("Failed to write target");
+    let link = temp_dir.path().join("link.txt");
+    std::os::unix::fs::symlink(&target, &link).expect("Failed to create symlink");
+
+    assert!(
+        is_symlink(&link),
+        "link.txt should be detected as a symlink"
+    );
+    assert!(!is_symlink(&target), "real.txt is not a symlink");
+
+    // Glob expansion must exclude the symlink, returning only the real file.
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    config.supplied_paths = vec!["*.txt".to_string()];
+    config.recursive = false;
+
+    let paths = get_paths_matching_glob(&config).expect("glob should succeed");
+    assert!(
+        !paths.iter().any(is_symlink),
+        "no symlink should be returned by glob expansion, got {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|p| std::path::Path::new(p)
+            .file_name()
+            .is_some_and(|n| n == "real.txt")),
+        "the real file should be present, got {paths:?}"
+    );
+}
+
+#[test]
+fn test_dry_run_does_not_modify_files() {
+    use std::process::Command;
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("dry.txt");
+    let original = b"line one\r\nline two\r\n";
+    fs::write(&file, original).expect("Failed to write file");
+
+    let output = Command::new(env!("CARGO_BIN_EXE_line_endings"))
+        .args(["--dry-run", "--linux-line-endings", "dry.txt"])
+        .current_dir(temp_dir.path())
+        .output()
+        .expect("Failed to run binary");
+
+    assert!(output.status.success(), "dry run should exit successfully");
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(
+        stdout.contains("Dry run"),
+        "output should announce dry run, got:\n{stdout}"
+    );
+    assert!(
+        stdout.contains("would rewrite to LF"),
+        "output should preview the rewrite, got:\n{stdout}"
+    );
+
+    // File and its content must be untouched, and no backup created.
+    let after = fs::read(&file).expect("file should still exist");
+    assert_eq!(after, original, "dry run must not modify the file");
+    assert!(
+        !file.with_extension("txt.bak").exists(),
+        "dry run must not create a backup"
     );
 }
