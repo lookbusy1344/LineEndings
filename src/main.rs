@@ -60,7 +60,7 @@ fn main() -> Result<()> {
 
     let start_time = Instant::now();
 
-    // expand glob patterns and get file paths
+    // expand glob patterns and get file paths (symbolic links are excluded)
     let expanded_paths =
         get_paths_matching_glob(&config).with_context(|| "Failed to expand glob patterns")?;
 

@@ -1106,3 +1106,39 @@ fn test_overlapping_globs_deduplicate() {
         "Overlapping patterns must yield each file exactly once, got {paths:?}"
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn test_symlink_is_detected_and_excluded() {
+    use line_endings::utils::{get_paths_matching_glob, is_symlink};
+
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let target = temp_dir.path().join("real.txt");
+    fs::write(&target, b"line\r\n").expect("Failed to write target");
+    let link = temp_dir.path().join("link.txt");
+    std::os::unix::fs::symlink(&target, &link).expect("Failed to create symlink");
+
+    assert!(
+        is_symlink(&link),
+        "link.txt should be detected as a symlink"
+    );
+    assert!(!is_symlink(&target), "real.txt is not a symlink");
+
+    // Glob expansion must exclude the symlink, returning only the real file.
+    let mut config = create_test_config();
+    config.folder = Some(temp_dir.path().to_string_lossy().to_string());
+    config.supplied_paths = vec!["*.txt".to_string()];
+    config.recursive = false;
+
+    let paths = get_paths_matching_glob(&config).expect("glob should succeed");
+    assert!(
+        !paths.iter().any(is_symlink),
+        "no symlink should be returned by glob expansion, got {paths:?}"
+    );
+    assert!(
+        paths.iter().any(|p| std::path::Path::new(p)
+            .file_name()
+            .is_some_and(|n| n == "real.txt")),
+        "the real file should be present, got {paths:?}"
+    );
+}

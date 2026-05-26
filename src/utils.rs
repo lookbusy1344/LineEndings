@@ -52,16 +52,20 @@ pub fn get_paths_matching_glob(config: &ConfigSettings) -> Result<Vec<String>> {
             full_pattern
         };
 
-        // Try to match the pattern as a glob
+        // Try to match the pattern as a glob. Symbolic links are excluded:
+        // rewriting through one would clobber the link or create a
+        // confusingly-named backup.
         let mut glob_matches: Vec<_> = glob::glob_with(&search_pattern, glob_settings)?
             .filter_map(|entry| match entry {
-                Ok(path) if path.is_file() => Some(path.to_string_lossy().into_owned()),
+                Ok(path) if path.is_file() && !is_symlink(&path) => {
+                    Some(path.to_string_lossy().into_owned())
+                }
                 _ => None,
             })
             .collect();
 
         // If the glob matched nothing, check if the pattern itself is a valid file
-        if glob_matches.is_empty() && file_exists(&search_pattern) {
+        if glob_matches.is_empty() && file_exists(&search_pattern) && !is_symlink(&search_pattern) {
             result.push(search_pattern);
         } else {
             // If glob matches were found, sort them and extend the result vector
@@ -97,4 +101,13 @@ fn deduplicate_paths(paths: Vec<String>) -> Vec<String> {
 pub fn file_exists(path: impl AsRef<Path>) -> bool {
     let path_ref = path.as_ref();
     path_ref.exists() && path_ref.is_file()
+}
+
+/// Returns true if the path is a symbolic link (without following it).
+///
+/// Symlinks are skipped before mutation: rewriting through one would either
+/// replace the link with a regular file or back up under a confusing name.
+#[must_use]
+pub fn is_symlink(path: impl AsRef<Path>) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_symlink())
 }

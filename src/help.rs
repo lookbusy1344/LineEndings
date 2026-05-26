@@ -22,7 +22,9 @@ NOTES:
     UTF-16/UTF-32 encoded files contain null bytes and are classified as
     binary, so they are skipped: their BOMs are not removed and their line
     endings are not rewritten. Only UTF-8 (and other null-free encodings)
-    are processed.";
+    are processed.
+
+    Symbolic links are skipped; only regular files are analyzed and fixed.";
 
 /// Show help message
 pub fn show_help() {
