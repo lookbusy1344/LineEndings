@@ -492,6 +492,7 @@ mod tests {
             path: path.to_path_buf(),
             lf_count: 1,
             crlf_count: 0,
+            cr_count: 0,
             bom_checked: false,
             bom_type: None,
             is_binary: false,

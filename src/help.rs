@@ -13,7 +13,16 @@ OPTIONS:
 FIXES:
     -w, --windows-line-endings   Rewrite with Windows line endings (CRLF)
     -l, --linux-line-endings     Rewrite with Linux line endings (LF)
-    -m, --remove-bom             Remove BOM from files that have one";
+    -m, --remove-bom             Remove BOM from files that have one
+
+NOTES:
+    Lone CR (classic Mac) line endings are detected and reported but are
+    never converted; they pass through unchanged.
+
+    UTF-16/UTF-32 encoded files contain null bytes and are classified as
+    binary, so they are skipped: their BOMs are not removed and their line
+    endings are not rewritten. Only UTF-8 (and other null-free encodings)
+    are processed.";
 
 /// Show help message
 pub fn show_help() {

@@ -323,16 +323,27 @@ fn test_count_line_endings_directly() {
 
     // Test direct line ending counting without config
     let windows_file = temp_dir.path().join("test_windows.txt");
-    let (lf_count, crlf_count) =
-        count_line_endings_in_file(&windows_file).expect("Should count line endings");
-    assert_eq!(lf_count, 0, "Windows file should have no LF");
-    assert!(crlf_count > 0, "Windows file should have CRLF");
+    let counts = count_line_endings_in_file(&windows_file).expect("Should count line endings");
+    assert_eq!(counts.lf, 0, "Windows file should have no LF");
+    assert!(counts.crlf > 0, "Windows file should have CRLF");
 
     let linux_file = temp_dir.path().join("test_linux.txt");
-    let (lf_count, crlf_count) =
-        count_line_endings_in_file(&linux_file).expect("Should count line endings");
-    assert!(lf_count > 0, "Linux file should have LF");
-    assert_eq!(crlf_count, 0, "Linux file should have no CRLF");
+    let counts = count_line_endings_in_file(&linux_file).expect("Should count line endings");
+    assert!(counts.lf > 0, "Linux file should have LF");
+    assert_eq!(counts.crlf, 0, "Linux file should have no CRLF");
+}
+
+#[test]
+fn test_count_line_endings_mixed_with_lone_cr() {
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("mixed.txt");
+    // 1 lone CR (a\rb), 1 CRLF (b\r\nc), 1 LF (c\nd), 1 trailing lone CR (d\r)
+    fs::write(&file, b"a\rb\r\nc\nd\r").expect("Failed to write file");
+
+    let counts = count_line_endings_in_file(&file).expect("Should count line endings");
+    assert_eq!(counts.lf, 1, "one lone LF");
+    assert_eq!(counts.crlf, 1, "one CRLF pair");
+    assert_eq!(counts.cr, 2, "two lone CRs (interior and trailing)");
 }
 
 #[test]
@@ -517,6 +528,7 @@ fn test_file_with_only_cr() {
     assert!(analysis.error.is_none(), "CR file should not error");
     assert_eq!(analysis.lf_count, 0, "Should have no LF");
     assert_eq!(analysis.crlf_count, 0, "Should have no CRLF");
+    assert_eq!(analysis.cr_count, 3, "Should detect 3 lone CR endings");
 }
 
 #[test]
@@ -534,6 +546,7 @@ fn test_file_ending_with_cr_no_lf() {
     assert!(analysis.error.is_none(), "Should not error");
     assert_eq!(analysis.lf_count, 1, "Should have 1 LF");
     assert_eq!(analysis.crlf_count, 0, "Should have no CRLF");
+    assert_eq!(analysis.cr_count, 1, "Trailing lone CR should be counted");
 }
 
 #[test]

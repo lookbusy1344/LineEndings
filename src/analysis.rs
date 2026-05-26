@@ -3,7 +3,7 @@ use std::fs::File;
 use std::io::{BufReader, Read};
 use std::path::Path;
 
-use crate::types::{BomType, ConfigSettings, FileAnalysis};
+use crate::types::{BomType, ConfigSettings, FileAnalysis, LineEndingCounts};
 
 // Define constants for line ending characters
 const BUFFER_SIZE: usize = 4096; // 4KB buffer for more efficient reading
@@ -27,6 +27,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                 path: path.as_ref().to_path_buf(),
                 lf_count: 0,
                 crlf_count: 0,
+                cr_count: 0,
                 bom_checked: false,
                 bom_type: None,
                 is_binary: true,
@@ -38,6 +39,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                 path: path.as_ref().to_path_buf(),
                 lf_count: 0,
                 crlf_count: 0,
+                cr_count: 0,
                 bom_checked: false,
                 bom_type: None,
                 is_binary: false,
@@ -56,6 +58,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
                     path: path.as_ref().to_path_buf(),
                     lf_count: 0,
                     crlf_count: 0,
+                    cr_count: 0,
                     bom_checked: false,
                     bom_type: None,
                     is_binary: false,
@@ -69,10 +72,11 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
 
     // Then count line endings
     match count_line_endings_in_file(&path) {
-        Ok((lf_count, crlf_count)) => FileAnalysis {
+        Ok(counts) => FileAnalysis {
             path: path.as_ref().to_path_buf(),
-            lf_count,
-            crlf_count,
+            lf_count: counts.lf,
+            crlf_count: counts.crlf,
+            cr_count: counts.cr,
             bom_checked: config.check_bom,
             bom_type,
             is_binary: false,
@@ -82,6 +86,7 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
             path: path.as_ref().to_path_buf(),
             lf_count: 0,
             crlf_count: 0,
+            cr_count: 0,
             bom_checked: config.check_bom,
             bom_type,
             is_binary: false,
@@ -95,23 +100,24 @@ pub fn analyze_file(path: impl AsRef<Path>, config: &ConfigSettings) -> FileAnal
 /// # Errors
 ///
 /// Returns an error if the file cannot be opened or read.
-pub fn count_line_endings_in_file(path: impl AsRef<Path>) -> Result<(usize, usize)> {
+pub fn count_line_endings_in_file(path: impl AsRef<Path>) -> Result<LineEndingCounts> {
     let file = File::open(&path)?;
     let reader = BufReader::with_capacity(BUFFER_SIZE, file);
-    let (lf_count, crlf_count) = count_line_endings(reader)?;
-
-    Ok((lf_count, crlf_count))
+    count_line_endings(reader)
 }
 
-/// Counts LF and Crlf line endings in a reader
+/// Counts LF, CRLF, and lone CR line endings in a reader.
+///
+/// A lone CR (a carriage return not immediately followed by LF, i.e. classic
+/// Mac style) is counted in `cr`. CRLF pairs count once in `crlf`, never in
+/// `cr`.
 ///
 /// # Errors
 ///
 /// Returns an error if reading from the reader fails.
-pub fn count_line_endings<R: Read>(mut reader: BufReader<R>) -> Result<(usize, usize)> {
+pub fn count_line_endings<R: Read>(mut reader: BufReader<R>) -> Result<LineEndingCounts> {
     let mut buffer = [0u8; BUFFER_SIZE];
-    let mut lf_count = 0;
-    let mut crlf_count = 0;
+    let mut counts = LineEndingCounts::default();
     let mut prev_was_cr = false;
 
     loop {
@@ -121,21 +127,37 @@ pub fn count_line_endings<R: Read>(mut reader: BufReader<R>) -> Result<(usize, u
         }
         for &b in &buffer[..n] {
             match b {
-                CR => prev_was_cr = true,
+                CR => {
+                    // A preceding CR with no LF was a lone CR.
+                    if prev_was_cr {
+                        counts.cr += 1;
+                    }
+                    prev_was_cr = true;
+                }
                 LF => {
                     if prev_was_cr {
-                        crlf_count += 1;
+                        counts.crlf += 1;
                     } else {
-                        lf_count += 1;
+                        counts.lf += 1;
                     }
                     prev_was_cr = false;
                 }
-                _ => prev_was_cr = false,
+                _ => {
+                    if prev_was_cr {
+                        counts.cr += 1;
+                    }
+                    prev_was_cr = false;
+                }
             }
         }
     }
 
-    Ok((lf_count, crlf_count))
+    // A trailing CR at EOF is a lone CR.
+    if prev_was_cr {
+        counts.cr += 1;
+    }
+
+    Ok(counts)
 }
 
 /// Detects BOM (Byte Order Marker) in a file.

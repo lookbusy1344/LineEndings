@@ -22,14 +22,21 @@ use utils::get_paths_matching_glob;
 /// Formats and prints analysis results for a successfully analyzed file
 fn print_file_analysis(result: &FileAnalysis) {
     let file_name = result.path.display();
-    let line_endings = if result.lf_count == 0 && result.crlf_count == 0 {
-        String::from("None")
-    } else if result.lf_count > 0 && result.crlf_count == 0 {
-        format!("LF {}", result.lf_count)
-    } else if result.lf_count == 0 && result.crlf_count > 0 {
-        format!("CRLF {}", result.crlf_count)
-    } else {
-        format!("Mixed LF {}, CRLF {}", result.lf_count, result.crlf_count)
+
+    let mut parts = Vec::new();
+    if result.lf_count > 0 {
+        parts.push(format!("LF {}", result.lf_count));
+    }
+    if result.crlf_count > 0 {
+        parts.push(format!("CRLF {}", result.crlf_count));
+    }
+    if result.cr_count > 0 {
+        parts.push(format!("CR {}", result.cr_count));
+    }
+    let line_endings = match parts.len() {
+        0 => String::from("None"),
+        1 => parts.remove(0),
+        _ => format!("Mixed {}", parts.join(", ")),
     };
 
     let bom_info = if result.bom_checked {

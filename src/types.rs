@@ -60,12 +60,24 @@ impl ConfigSettings {
     }
 }
 
+/// Tallies of the three line-ending styles found in a file. `cr` counts lone
+/// carriage returns (classic Mac, CR not followed by LF); these are detected
+/// and reported but not converted — see the help text.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct LineEndingCounts {
+    pub lf: usize,
+    pub crlf: usize,
+    pub cr: usize,
+}
+
 /// Stores the results of line ending analysis for a file
 #[derive(Debug, Clone)]
 pub struct FileAnalysis {
     pub path: PathBuf,
     pub lf_count: usize,
     pub crlf_count: usize,
+    /// Count of lone CR (classic Mac) line endings. Reported only; not converted.
+    pub cr_count: usize,
     /// `true` if the BOM check was requested (--bom or --remove-bom flags).
     /// Distinguish "no BOM found" (`bom_checked = true, bom_type = None`) from
     /// "check not requested" (`bom_checked = false`).
