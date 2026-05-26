@@ -1,8 +1,9 @@
 use anyhow::Result;
 use rayon::prelude::*;
+use std::collections::HashSet;
 use std::fs::File;
 use std::io::{self, BufReader, BufWriter, Read, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::NamedTempFile;
 
 use crate::types::{
@@ -381,44 +382,78 @@ pub fn remove_bom_from_file(path: &Path, bom_size: usize) -> io::Result<()> {
     Ok(())
 }
 
-/// Deletes backup files for the given file analyses
+/// Returns the set of backup paths that already exist for the given files.
+///
+/// Call this *before* any rewrite/BOM-removal mutates files. Backups that
+/// already exist at that point were not created by this run (a stale backup
+/// from an aborted run, or an unrelated user file such as a hand-written
+/// `notes.txt.bak`) and must never be trashed.
+#[must_use]
+pub fn existing_backup_paths(results: &[FileAnalysis]) -> HashSet<PathBuf> {
+    results
+        .iter()
+        .filter(|result| result.error.is_none())
+        .map(|result| get_backup_path(&result.path))
+        .filter(|backup_path| backup_path.exists())
+        .collect()
+}
+
+/// Determines which backups are safe to trash: those that exist now and were
+/// not present before the run (i.e. created by this run).
+fn backups_eligible_for_trash<S: std::hash::BuildHasher>(
+    results: &[FileAnalysis],
+    preexisting: &HashSet<PathBuf, S>,
+) -> Vec<PathBuf> {
+    results
+        .iter()
+        .filter(|result| result.error.is_none())
+        .map(|result| get_backup_path(&result.path))
+        .filter(|backup_path| backup_path.exists() && !preexisting.contains(backup_path))
+        .collect()
+}
+
+/// Moves backups created by this run to the trash.
+///
+/// `preexisting` is the set of backup paths that already existed before the
+/// run (from [`existing_backup_paths`]); those are left untouched so an
+/// unrelated or stale `.bak` is never destroyed.
 ///
 /// # Errors
 ///
 /// Returns an error if backup deletion fails.
-pub fn trash_backup_files(results: &[FileAnalysis]) -> Result<()> {
+pub fn trash_backup_files<S: std::hash::BuildHasher>(
+    results: &[FileAnalysis],
+    preexisting: &HashSet<PathBuf, S>,
+) -> Result<()> {
     println!();
 
+    let to_trash = backups_eligible_for_trash(results, preexisting);
     let mut deleted_count = 0usize;
-    let mut not_found_count = 0usize;
 
-    for result in results {
-        // Skip files with errors
-        if result.error.is_some() {
-            continue;
-        }
-
-        let backup_path = get_backup_path(&result.path);
-        if backup_path.exists() {
-            match trash::delete(&backup_path) {
-                Ok(()) => {
-                    println!("\"{}\"\tbackup moved to trash", backup_path.display());
-                    deleted_count += 1;
-                }
-                Err(e) => {
-                    return Err(anyhow::anyhow!(
-                        "Failed to move backup to trash {}: {}",
-                        backup_path.display(),
-                        e
-                    ));
-                }
+    for backup_path in &to_trash {
+        match trash::delete(backup_path) {
+            Ok(()) => {
+                println!("\"{}\"\tbackup moved to trash", backup_path.display());
+                deleted_count += 1;
             }
-        } else {
-            not_found_count += 1;
+            Err(e) => {
+                return Err(anyhow::anyhow!(
+                    "Failed to move backup to trash {}: {}",
+                    backup_path.display(),
+                    e
+                ));
+            }
         }
     }
 
-    println!("Moved {deleted_count} backup file(s) to trash, {not_found_count} not found");
+    let preserved = preexisting.len();
+    if preserved > 0 {
+        println!(
+            "Moved {deleted_count} backup file(s) to trash, kept {preserved} pre-existing backup file(s)"
+        );
+    } else {
+        println!("Moved {deleted_count} backup file(s) to trash");
+    }
 
     Ok(())
 }
@@ -450,5 +485,63 @@ mod tests {
         let path = std::path::Path::new(".gitignore");
         let backup = get_backup_path(path);
         assert_eq!(backup, std::path::Path::new(".gitignore.bak"));
+    }
+
+    fn analysis_for(path: &Path) -> FileAnalysis {
+        FileAnalysis {
+            path: path.to_path_buf(),
+            lf_count: 1,
+            crlf_count: 0,
+            bom_checked: false,
+            bom_type: None,
+            is_binary: false,
+            error: None,
+        }
+    }
+
+    #[test]
+    fn test_preexisting_backup_is_not_eligible_for_trash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, b"data\n").expect("write file");
+        // An unrelated/pre-existing backup the user owns.
+        let backup = get_backup_path(&file);
+        std::fs::write(&backup, b"user data\n").expect("write backup");
+
+        let results = vec![analysis_for(&file)];
+        let preexisting = existing_backup_paths(&results);
+        assert!(
+            preexisting.contains(&backup),
+            "pre-existing backup should be snapshotted"
+        );
+
+        let eligible = backups_eligible_for_trash(&results, &preexisting);
+        assert!(
+            eligible.is_empty(),
+            "a pre-existing backup must never be trashed, got {eligible:?}"
+        );
+    }
+
+    #[test]
+    fn test_run_created_backup_is_eligible_for_trash() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let file = dir.path().join("notes.txt");
+        std::fs::write(&file, b"data\n").expect("write file");
+
+        let results = vec![analysis_for(&file)];
+        // Snapshot before the backup exists (as main does before mutation).
+        let preexisting = existing_backup_paths(&results);
+        assert!(preexisting.is_empty());
+
+        // Simulate the run creating the backup.
+        let backup = get_backup_path(&file);
+        std::fs::write(&backup, b"data\n").expect("write backup");
+
+        let eligible = backups_eligible_for_trash(&results, &preexisting);
+        assert_eq!(
+            eligible,
+            vec![backup],
+            "a backup created during the run should be eligible for trash"
+        );
     }
 }

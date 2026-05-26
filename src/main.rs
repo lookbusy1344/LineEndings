@@ -15,7 +15,7 @@ mod utils;
 use analysis::analyze_file;
 use config::parse_args;
 use help::show_help;
-use processing::{remove_bom_from_files, rewrite_files, trash_backup_files};
+use processing::{existing_backup_paths, remove_bom_from_files, rewrite_files, trash_backup_files};
 use types::{FileAnalysis, LineEndingTarget};
 use utils::get_paths_matching_glob;
 
@@ -64,45 +64,8 @@ fn main() -> Result<()> {
         return Err(anyhow::anyhow!("No input files found"));
     }
 
-    // Build configuration display, only showing non-default/active options
-    let mut config_parts = Vec::new();
-
-    // Always show folder if not current directory
-    if let Some(folder) = &config.folder
-        && folder != "."
-    {
-        config_parts.push(format!("Folder: {folder}"));
-    }
-
-    // Only show boolean flags if they are true
-    if config.case_sensitive {
-        config_parts.push("Case sensitive: true".to_string());
-    }
-    if config.recursive {
-        config_parts.push("Recursive: true".to_string());
-    }
-    if config.check_bom {
-        config_parts.push("Check BOM: true".to_string());
-    }
-    if config.remove_bom {
-        config_parts.push("Remove BOM: true".to_string());
-    }
-    if config.no_trash {
-        config_parts.push("Trash backups: disabled".to_string());
-    }
-
-    // Only show line ending alteration if one is set
-    match config.line_ending_target {
-        LineEndingTarget::Linux => {
-            config_parts.push("Line ending alteration: Linux (LF)".to_string());
-        }
-        LineEndingTarget::Windows => {
-            config_parts.push("Line ending alteration: Windows (CRLF)".to_string());
-        }
-        LineEndingTarget::None => {} // Don't show anything for no alteration
-    }
-
     // Display configuration if there are any non-default options
+    let config_parts = build_config_display(&config);
     if !config_parts.is_empty() {
         println!("{}", config_parts.join(", "));
     }
@@ -152,6 +115,17 @@ fn main() -> Result<()> {
         return Err(anyhow::anyhow!("  Files with errors: {has_errors}"));
     }
 
+    let will_mutate = config.has_rewrite_option() || config.remove_bom;
+
+    // Snapshot backups that already exist *before* any mutation. These were not
+    // created by this run (stale leftovers or unrelated user files) and must
+    // never be trashed.
+    let preexisting_backups = if will_mutate {
+        snapshot_and_warn_preexisting_backups(&results)
+    } else {
+        std::collections::HashSet::new()
+    };
+
     // optionally rewrite files if requested
     if config.has_rewrite_option() {
         rewrite_files(&config, &results)?;
@@ -163,8 +137,8 @@ fn main() -> Result<()> {
     }
 
     // Move backup files to trash unless --no-trash was specified
-    if !config.no_trash && (config.has_rewrite_option() || config.remove_bom) {
-        trash_backup_files(&results)?;
+    if !config.no_trash && will_mutate {
+        trash_backup_files(&results, &preexisting_backups)?;
     }
 
     // Print summary statistics
@@ -180,6 +154,63 @@ fn main() -> Result<()> {
     );
 
     Ok(())
+}
+
+/// Builds the list of non-default/active configuration options to display.
+fn build_config_display(config: &types::ConfigSettings) -> Vec<String> {
+    let mut config_parts = Vec::new();
+
+    // Always show folder if not current directory
+    if let Some(folder) = &config.folder
+        && folder != "."
+    {
+        config_parts.push(format!("Folder: {folder}"));
+    }
+
+    // Only show boolean flags if they are true
+    if config.case_sensitive {
+        config_parts.push("Case sensitive: true".to_string());
+    }
+    if config.recursive {
+        config_parts.push("Recursive: true".to_string());
+    }
+    if config.check_bom {
+        config_parts.push("Check BOM: true".to_string());
+    }
+    if config.remove_bom {
+        config_parts.push("Remove BOM: true".to_string());
+    }
+    if config.no_trash {
+        config_parts.push("Trash backups: disabled".to_string());
+    }
+
+    // Only show line ending alteration if one is set
+    match config.line_ending_target {
+        LineEndingTarget::Linux => {
+            config_parts.push("Line ending alteration: Linux (LF)".to_string());
+        }
+        LineEndingTarget::Windows => {
+            config_parts.push("Line ending alteration: Windows (CRLF)".to_string());
+        }
+        LineEndingTarget::None => {} // Don't show anything for no alteration
+    }
+
+    config_parts
+}
+
+/// Snapshots backups that already exist before any mutation and warns that
+/// each will neither be refreshed nor trashed by this run.
+fn snapshot_and_warn_preexisting_backups(
+    results: &[FileAnalysis],
+) -> std::collections::HashSet<std::path::PathBuf> {
+    let preexisting = existing_backup_paths(results);
+    for backup_path in &preexisting {
+        println!(
+            "Warning: backup \"{}\" already exists; it will not be refreshed and the change will not be protected by it",
+            backup_path.display()
+        );
+    }
+    preexisting
 }
 
 fn print_summary(
