@@ -1,7 +1,7 @@
 use anyhow::Result;
 use rayon::prelude::*;
 use std::fs::File;
-use std::io::{self, BufRead, BufReader, Read, Seek, Write};
+use std::io::{self, BufReader, BufWriter, Read, Write};
 use std::path::Path;
 use tempfile::NamedTempFile;
 
@@ -12,6 +12,8 @@ use crate::types::{
 
 // Define constants for line ending characters and buffer size
 const BUFFER_SIZE: usize = 4096; // 4KB buffer for more efficient reading
+const CR: u8 = b'\r';
+const LF: u8 = b'\n';
 
 /// Rewrites files with specified line endings based on the configuration settings.
 ///
@@ -170,40 +172,61 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     let parent = input_path.parent().unwrap_or_else(|| Path::new(""));
     let mut temp_file = NamedTempFile::new_in(parent)?;
 
-    // Check if file ends with a newline by reading only the last byte
-    let has_trailing_newline = check_trailing_newline(input_path)?;
-
-    // Process file line by line without loading into memory
+    // Stream the file at the byte level so any encoding (including non-UTF-8
+    // text such as Latin-1) round-trips without loss. CRLF and lone LF are
+    // normalised to the target ending; a lone CR (not followed by LF) is
+    // preserved verbatim, matching the byte-level analysis stage which counts
+    // neither LF nor CRLF for it.
     let infile = File::open(input_path)?;
-    let reader = BufReader::with_capacity(BUFFER_SIZE, infile);
+    let mut reader = BufReader::with_capacity(BUFFER_SIZE, infile);
+    let mut writer = BufWriter::with_capacity(BUFFER_SIZE, temp_file.as_file_mut());
 
     let line_ending: &[u8] = match ending {
-        LineEnding::Lf => &b"\n"[..],
-        LineEnding::Crlf => &b"\r\n"[..],
+        LineEnding::Lf => b"\n",
+        LineEnding::Crlf => b"\r\n",
     };
 
-    let mut lines = reader.lines();
-    let mut last_line: Option<String> = None;
+    let mut buffer = [0u8; BUFFER_SIZE];
+    let mut prev_was_cr = false;
 
-    // Process all lines except the last
-    for line in lines.by_ref() {
-        if let Some(prev_line) = last_line.take() {
-            temp_file.write_all(prev_line.as_bytes())?;
-            temp_file.write_all(line_ending)?;
+    loop {
+        let n = reader.read(&mut buffer)?;
+        if n == 0 {
+            break;
         }
-        last_line = Some(line?);
+        for &b in &buffer[..n] {
+            match b {
+                CR => {
+                    // A preceding CR was a lone CR — emit it verbatim.
+                    if prev_was_cr {
+                        writer.write_all(&[CR])?;
+                    }
+                    prev_was_cr = true;
+                }
+                LF => {
+                    // Both CRLF (prev_was_cr) and a lone LF map to the target.
+                    writer.write_all(line_ending)?;
+                    prev_was_cr = false;
+                }
+                other => {
+                    if prev_was_cr {
+                        writer.write_all(&[CR])?;
+                        prev_was_cr = false;
+                    }
+                    writer.write_all(&[other])?;
+                }
+            }
+        }
     }
 
-    // Write the last line, adding line ending only if original had trailing newline
-    if let Some(line) = last_line {
-        temp_file.write_all(line.as_bytes())?;
-        if has_trailing_newline {
-            temp_file.write_all(line_ending)?;
-        }
+    // A trailing lone CR at EOF is preserved verbatim.
+    if prev_was_cr {
+        writer.write_all(&[CR])?;
     }
 
-    // Ensure all data is written before replacing files
-    temp_file.flush()?;
+    // Ensure all buffered data reaches the temp file before replacing.
+    writer.flush()?;
+    drop(writer);
 
     // Preserve the original file's permissions before replacing it
     preserve_permissions(&temp_file, input_path)?;
@@ -212,23 +235,6 @@ pub fn rewrite_file_with_line_ending(input_path: &Path, ending: LineEnding) -> i
     temp_file.persist(input_path)?;
 
     Ok(())
-}
-
-/// Checks if a file ends with a newline without reading the entire file
-fn check_trailing_newline(path: &Path) -> io::Result<bool> {
-    let mut file = File::open(path)?;
-    let file_size = file.metadata()?.len();
-
-    if file_size == 0 {
-        return Ok(false);
-    }
-
-    // Seek to the last byte
-    file.seek(io::SeekFrom::End(-1))?;
-    let mut last_byte = [0u8; 1];
-    file.read_exact(&mut last_byte)?;
-
-    Ok(last_byte[0] == b'\n')
 }
 
 /// Removes BOMs from files based on the file analysis

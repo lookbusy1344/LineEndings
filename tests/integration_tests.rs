@@ -1017,3 +1017,52 @@ fn test_file_permissions_preserved_on_bom_removal() {
         & 0o777;
     assert_eq!(mode, 0o644, "File mode must survive BOM removal");
 }
+
+#[test]
+fn test_non_utf8_text_file_converts_and_preserves_bytes() {
+    // Latin-1 byte 0xE9 ('é') is valid text (no null, low non-printable ratio)
+    // but is NOT valid UTF-8. A line-by-line String rewrite would fail on it.
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("latin1.txt");
+    fs::write(&file, b"caf\xE9\r\nr\xE9sum\xE9\r\n").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Linux;
+
+    let analysis = analyze_file(&file, &config);
+    assert!(analysis.is_crlf_only(), "Original should be CRLF only");
+
+    let result = rewrite_files(&config, &[analysis]);
+    assert!(
+        result.is_ok(),
+        "Non-UTF-8 text file should convert without error"
+    );
+
+    let content = fs::read(&file).expect("Should read file");
+    assert_eq!(
+        content, b"caf\xE9\nr\xE9sum\xE9\n",
+        "CRLF converted to LF with non-UTF-8 bytes preserved"
+    );
+}
+
+#[test]
+fn test_lone_cr_preserved_during_conversion() {
+    // A lone CR (not part of CRLF) must pass through untouched, matching the
+    // analysis stage which counts neither LF nor CRLF for it.
+    let temp_dir = TempDir::new().expect("Failed to create temporary directory");
+    let file = temp_dir.path().join("lonecr.txt");
+    fs::write(&file, b"a\rb\r\nc\n").expect("Failed to write file");
+
+    let mut config = create_test_config();
+    config.line_ending_target = LineEndingTarget::Windows;
+
+    let analysis = analyze_file(&file, &config);
+    let result = rewrite_files(&config, &[analysis]);
+    assert!(result.is_ok(), "Conversion should succeed");
+
+    let content = fs::read(&file).expect("Should read file");
+    assert_eq!(
+        content, b"a\rb\r\nc\r\n",
+        "lone CR preserved; LF and CRLF normalised to CRLF"
+    );
+}
