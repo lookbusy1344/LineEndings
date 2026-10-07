@@ -4,6 +4,10 @@
 
 A fast, safe, and efficient Rust command-line tool for analyzing and fixing line ending issues in text files. Detect line ending types (LF/CRLF), check for Byte Order Marks (BOM), and optionally fix these issues with consistent line endings.
 
+## Jujutsu
+
+This repo is managed with Jujutsu rather than Git. Try it out! https://docs.jj-vcs.dev/latest/
+
 ## Features
 
 - **Line Ending Detection**: Identify LF (Unix/Linux) vs CRLF (Windows) line endings
