@@ -1,59 +1,38 @@
 #!/usr/bin/env bash
 # pre-commit.sh — run this project's required checks before committing.
 #
-# Install (one-time setup):
+# jj: run before `jj commit`, `jj describe` (finalising) and `jj squash`.
+#     Inspects the changes in @.
+# git: install once as a hook, or run directly. Inspects changes against HEAD.
 #   ln -sf ../../scripts/pre-commit.sh .git/hooks/pre-commit
 #
-# Can also be run directly: ./scripts/pre-commit.sh
+# Skips the checks when no Rust or Cargo file changed.
 
 set -euo pipefail
 
-readonly NEXTEST_TIMEOUT_SECONDS=300
-
-resolve_script_path() {
-    local source_path="$1"
-
-    while [[ -L "${source_path}" ]]; do
-        local source_dir
-        source_dir="$(cd -P "$(dirname "${source_path}")" && pwd)"
-        source_path="$(readlink "${source_path}")"
-
-        if [[ "${source_path}" != /* ]]; then
-            source_path="${source_dir}/${source_path}"
-        fi
-    done
-
-    local resolved_dir
-    resolved_dir="$(cd -P "$(dirname "${source_path}")" && pwd)"
-    printf '%s/%s\n' "${resolved_dir}" "$(basename "${source_path}")"
+is_rust_path() {
+    [[ "$1" == *.rs || "$1" == "Cargo.toml" || "$1" == "Cargo.lock" ]]
 }
 
-run() {
-    echo "==> $*"
-    "$@"
+changed_paths() {
+    if jj --ignore-working-copy root > /dev/null 2>&1; then
+        jj diff --name-only -r @
+    else
+        git diff HEAD --name-only -z | tr '\0' '\n'
+    fi
 }
 
-is_rust_commit_relevant_path() {
-    local staged_path="$1"
-
-    [[ "${staged_path}" == *.rs ]] \
-        || [[ "${staged_path}" == "Cargo.toml" ]] \
-        || [[ "${staged_path}" == "Cargo.lock" ]]
-}
-
-real_script="$(resolve_script_path "$0")"
-script_dir="$(cd "$(dirname "${real_script}")" && pwd)"
-project_dir="$(cd "${script_dir}/.." && pwd)"
-
-cd "${project_dir}"
+# Run from the repo root; works when invoked via the .git/hooks symlink.
+root="$(jj --ignore-working-copy root 2> /dev/null || git rev-parse --show-toplevel)"
+cd "${root}"
 
 should_run=false
-while IFS= read -r -d '' staged_path; do
-    if is_rust_commit_relevant_path "${staged_path}"; then
+while IFS= read -r path; do
+    if is_rust_path "${path}"; then
         should_run=true
         break
     fi
-done < <(git -C "${project_dir}" diff HEAD --name-only -z)
+done < <(changed_paths)
 
 if [[ "${should_run}" != true ]]; then
     echo "==> No modified Rust or Cargo files detected, skipping."
@@ -61,10 +40,5 @@ if [[ "${should_run}" != true ]]; then
 fi
 
 echo "==> Running LineEndings pre-commit checks..."
-
-run cargo build --all-targets
-run cargo clippy --all-targets --all-features -- -D clippy::all -D clippy::pedantic -F unsafe_code
-run cargo fmt --check
-run gtimeout "${NEXTEST_TIMEOUT_SECONDS}" cargo nextest run
-
+"${root}/scripts/checks.sh"
 echo "==> All checks passed."

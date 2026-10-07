@@ -3,6 +3,13 @@ name = "line_endings"
 version = "1.2.0"
 edition = "2024"
 
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+
 [profile.release]
 panic = 'abort'
 codegen-units = 1
